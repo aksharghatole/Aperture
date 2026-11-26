@@ -214,7 +214,7 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                         active.takePhoto(pending) { saved ->
                             busy = false
                             if (!saved) {
-                                pending.delete()
+                                library.discardCapture(pending)
                                 captureMessage = "Capture failed · try again"
                             } else {
                                 val result = runCatching { library.commitCapture(pending, selectedFilm) }
