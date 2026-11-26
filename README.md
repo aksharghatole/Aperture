@@ -1,8 +1,10 @@
 # Aperture
 
+[Build and install](#build-and-install) · [Camera and darkroom](#camera-and-darkroom) · [Device verification](#device-verification) · [Actions](https://github.com/aksharghatole/Aperture/actions)
+
 Aperture is an offline photography app for Android 10 and newer. It includes a CameraX viewfinder, composition and level guidance, live film looks, an on-device library, and a basic darkroom.
 
-## Build
+## Build and install
 
 Use JDK 17 or 21, Android SDK Platform 35, and Build Tools 35.0.0. Set `ANDROID_HOME` to the SDK path or create an Android Studio `local.properties` file.
 
@@ -26,6 +28,8 @@ Use **Reference** to pick an image and adjust its opacity. The overlay is center
 Portrait mode uses Android’s offline frontal face detector. It shows an eye-position cue after two nearby detections of a single confident face. Groups, profiles, small faces, and devices without working detection can use the upper guide manually.
 
 The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device. If camera analysis stalls or returns an invalid frame, Aperture drops its scene cues and keeps manual guides available.
+
+## Device verification
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.
 
