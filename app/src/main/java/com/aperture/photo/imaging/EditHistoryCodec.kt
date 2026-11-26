@@ -23,16 +23,25 @@ internal object EditHistoryCodec {
         val lines = encoded.lines()
         val header = lines.first().split(',')
         if (header.size != 2) return null
-        val fieldCount = when (header[0]) {
-            "1" -> 7
-            "2" -> 11
-            "3" -> 13
-            "4" -> 25
-            else -> return null
-        }
+        val fieldCount = fieldsForVersion(header[0]) ?: return null
         val cursor = header[1].toIntOrNull() ?: return null
         val snapshots = lines.drop(1).map { decodeRecipe(it, fieldCount) ?: return null }
         return EditHistory.restore(snapshots, cursor)
+    }
+
+    fun isUnsupportedVersion(encoded: String): Boolean {
+        val header = encoded.lineSequence().first().split(',')
+        val version = header.firstOrNull()?.toIntOrNull() ?: return false
+        return version > 0 && header.size == 2 && header[1].toIntOrNull() != null &&
+            fieldsForVersion(header[0]) == null
+    }
+
+    private fun fieldsForVersion(version: String): Int? = when (version) {
+        "1" -> 7
+        "2" -> 11
+        "3" -> 13
+        "4" -> 25
+        else -> null
     }
 
     private fun decodeRecipe(line: String, fieldCount: Int): Recipe? {

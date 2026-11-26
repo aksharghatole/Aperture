@@ -13,16 +13,53 @@ import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.imaging.ToneCurve
 import com.aperture.photo.library.PhotoLibrary
+import com.aperture.photo.library.SavedEditException
+import com.aperture.photo.library.SavedEditProblem
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class PhotoWorkflowTest {
+    @Test fun invalidEditFilesArePreservedUntilExplicitReplacement() {
+        val library = PhotoLibrary(InstrumentationRegistry.getInstrumentation().targetContext)
+        val pending = library.beginCapture().apply { writeText("original") }
+        val photo = library.commitCapture(pending, Film.CLEAN)
+        val sidecar = File(photo.file.parentFile, "${photo.file.name}.edits")
+        val replacement = EditHistory(Recipe(exposure = .5f))
+        try {
+            for ((encoded, expected) in listOf(
+                "4,0\nCLEAN,0.0" to SavedEditProblem.CORRUPT,
+                "99,0\nfuture-format" to SavedEditProblem.UNSUPPORTED
+            )) {
+                sidecar.writeText(encoded)
+                assertEquals(expected, assertThrows(SavedEditException::class.java) { library.loadEdits(photo) }.problem)
+                assertThrows(SavedEditException::class.java) { library.exportSavedEdits(photo) }
+                assertThrows(SavedEditException::class.java) { library.saveEdits(photo, replacement) }
+                assertEquals(encoded, sidecar.readText())
+                library.saveEdits(photo, replacement, expected)
+                assertEquals(replacement.current, library.loadEdits(photo)?.current)
+            }
+            assertTrue(sidecar.delete())
+            assertTrue(sidecar.mkdir())
+            assertEquals(SavedEditProblem.UNREADABLE,
+                assertThrows(SavedEditException::class.java) { library.loadEdits(photo) }.problem)
+            assertThrows(SavedEditException::class.java) {
+                library.saveEdits(photo, replacement, SavedEditProblem.UNREADABLE)
+            }
+            assertTrue(sidecar.isDirectory)
+            assertEquals("original", photo.file.readText())
+        } finally {
+            sidecar.delete()
+            library.delete(photo)
+        }
+    }
+
     @Test fun rendererAppliesMasterAndChannelCurvesToOutput() {
         val source = Bitmap.createBitmap(2, 1, Bitmap.Config.ARGB_8888)
         source.setPixel(0, 0, Color.rgb(128, 128, 128))
