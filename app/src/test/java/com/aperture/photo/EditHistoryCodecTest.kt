@@ -41,6 +41,13 @@ class EditHistoryCodecTest {
         assertEquals(Recipe(shadows = .25f, highlights = -.5f), EditHistoryCodec.decode(saved)?.current)
     }
 
+    @Test fun distinguishesFutureVersionsFromDamagedHeaders() {
+        assertTrue(EditHistoryCodec.isUnsupportedVersion("99,0\nnew-format"))
+        assertFalse(EditHistoryCodec.isUnsupportedVersion("99,"))
+        assertFalse(EditHistoryCodec.isUnsupportedVersion("4,0\ntruncated"))
+        assertFalse(EditHistoryCodec.isUnsupportedVersion(""))
+    }
+
     @Test fun rejectsInvalidAndUnknownEditFiles() {
         val valid = EditHistoryCodec.encode(EditHistory(Recipe()))
         assertNull(EditHistoryCodec.decode(valid.replaceFirst("4,0", "5,0")))

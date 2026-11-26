@@ -39,6 +39,8 @@ import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
+import com.aperture.photo.library.SavedEditException
+import com.aperture.photo.library.SavedEditProblem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -221,6 +223,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
         mutableStateOf(EditHistory(original))
     }
     var editsLoaded by rememberSaveable(photo.file.name) { mutableStateOf(false) }
+    var savedEditProblem by rememberSaveable(photo.file.name) { mutableStateOf<SavedEditProblem?>(null) }
+    var confirmReplacement by remember { mutableStateOf(false) }
     var saving by remember(photo) { mutableStateOf(false) }
     var draft by remember(photo) { mutableStateOf<Recipe?>(null) }
     val recipe = draft ?: history.current
@@ -231,7 +235,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     val loaded by loadedPhoto(photo, 1400)
     val source = loaded?.getOrNull()
     var curveDraft by remember(photo) { mutableStateOf<RgbCurves?>(null) }
-    val rendered by renderedPhoto(source, curveDraft?.let { recipe.copy(curves = it) } ?: recipe)
+    val previewRecipe = if (savedEditProblem != null) Recipe() else curveDraft?.let { recipe.copy(curves = it) } ?: recipe
+    val rendered by renderedPhoto(source, previewRecipe)
     val preview = rendered?.getOrNull()
     var showHistogram by rememberSaveable { mutableStateOf(false) }
     var result by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -240,18 +245,57 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     var confirmDelete by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(photo.file.name, library) {
+    LaunchedEffect(photo.file.name, library, editsLoaded) {
         if (!editsLoaded) {
             try {
                 withContext(Dispatchers.IO) { library.loadEdits(photo) }?.let { history = it }
+                savedEditProblem = null
             } catch (failure: CancellationException) {
                 throw failure
+            } catch (failure: SavedEditException) {
+                savedEditProblem = failure.problem
             } catch (_: Exception) {
-                message = "Saved edits could not be opened."
+                savedEditProblem = SavedEditProblem.UNREADABLE
             }
             editsLoaded = true
         }
     }
+    fun save(replace: SavedEditProblem? = null) {
+        val snapshot = history
+        saving = true
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { library.saveEdits(photo, snapshot, replace) }
+                savedEditProblem = null
+                message = "Edits saved"
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: SavedEditException) {
+                savedEditProblem = failure.problem
+                message = "The existing edit file was preserved."
+            } catch (_: Exception) {
+                message = "Edits could not be saved. Try again."
+            } finally {
+                saving = false
+            }
+        }
+    }
+
+    if (confirmReplacement) {
+        AlertDialog(
+            onDismissRequest = { confirmReplacement = false },
+            title = { Text("Replace saved edits?") },
+            text = { Text("This will replace the unreadable edit history for this photo. The original photo is preserved.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmReplacement = false
+                    savedEditProblem?.let { save(it) }
+                }) { Text("Replace") }
+            },
+            dismissButton = { TextButton(onClick = { confirmReplacement = false }) { Text("Cancel") } }
+        )
+    }
+
     BackHandler(enabled = saving || deleting) {}
     if (confirmDelete) {
         AlertDialog(
@@ -304,7 +348,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                     Text("Delete")
                 }
                 TextButton(enabled = editsLoaded && source != null && !exporting && !saving && !deleting, onClick = {
-                    val exportRecipe = recipe
+                    val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
                     scope.launch {
                         exporting = true
                         result = null
@@ -322,7 +366,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                             exporting = false
                         }
                     }
-                }) { Text("Export") }
+                }) { Text(if (savedEditProblem == null) "Export" else "Export original") }
             }
         }
 
@@ -341,8 +385,23 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
             }
         }
 
+        savedEditProblem?.let { problem ->
+            val explanation = when (problem) {
+                SavedEditProblem.CORRUPT -> "Saved edits are damaged."
+                SavedEditProblem.UNSUPPORTED -> "These saved edits use a format this version cannot open."
+                SavedEditProblem.UNREADABLE -> "Saved edits could not be read."
+            }
+            Text("$explanation You can export the original.", modifier = Modifier.padding(vertical = 8.dp))
+            if (problem == SavedEditProblem.UNREADABLE) {
+                TextButton(onClick = { editsLoaded = false }) { Text("Retry saved edits") }
+            } else {
+                TextButton(enabled = !saving && !exporting && !deleting, onClick = { confirmReplacement = true }) {
+                    Text("Replace saved edits")
+                }
+            }
+        }
         var selectedTool by rememberSaveable { mutableStateOf("Exposure") }
-        if (editsLoaded) Column(Modifier.padding(top = 6.dp)) {
+        if (editsLoaded && savedEditProblem == null) Column(Modifier.padding(top = 6.dp)) {
             FilmPicker(recipe.film) { if (recipe.film != it) commit(recipe.copy(film = it, vignette = it.vignette)) }
             val controls = listOf(
                 EditControl("Exposure", recipe.exposure, -2f..2f) { draft = (draft ?: history.current).copy(exposure = it) },
@@ -365,22 +424,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TextButton(enabled = source != null && !saving && !exporting && draft == null, onClick = {
-                    val snapshot = history
-                    saving = true
-                    scope.launch {
-                        try {
-                            withContext(Dispatchers.IO) { library.saveEdits(photo, snapshot) }
-                            message = "Edits saved"
-                        } catch (failure: CancellationException) {
-                            throw failure
-                        } catch (_: Exception) {
-                            message = "Edits could not be saved. Try again."
-                        } finally {
-                            saving = false
-                        }
-                    }
-                }) { Text(if (saving) "Saving…" else "Save edits") }
+                TextButton(enabled = source != null && !saving && !exporting && draft == null,
+                    onClick = { save() }) { Text(if (saving) "Saving…" else "Save edits") }
                 TextButton(enabled = preview != null, onClick = { showHistogram = !showHistogram }) {
                     Text(if (showHistogram) "Hide histogram" else "Histogram")
                 }
