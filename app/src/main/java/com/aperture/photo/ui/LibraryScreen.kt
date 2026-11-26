@@ -2,6 +2,7 @@ package com.aperture.photo.ui
 
 import android.content.Intent
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -16,7 +17,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aperture.photo.imaging.EditHistory
-import com.aperture.photo.imaging.Film
+import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.library.Photo
@@ -107,6 +108,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
     var history by rememberSaveable(photo.file.name, stateSaver = EditHistorySaver) {
         mutableStateOf(EditHistory(original))
     }
+    var editsLoaded by rememberSaveable(photo.file.name) { mutableStateOf(false) }
+    var saving by remember(photo) { mutableStateOf(false) }
     var draft by remember(photo) { mutableStateOf<Recipe?>(null) }
     val recipe = draft ?: history.current
     fun commit(edit: Recipe) {
@@ -121,9 +124,23 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
     var exporting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(photo.file.name, library) {
+        if (!editsLoaded) {
+            try {
+                withContext(Dispatchers.IO) { library.loadEdits(photo) }?.let { history = it }
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (_: Exception) {
+                message = "Saved edits could not be opened."
+            }
+            editsLoaded = true
+        }
+    }
+    BackHandler(enabled = saving) {}
+
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        ScreenHeader("Darkroom", "Library", back) {
-            TextButton(enabled = source != null && !exporting, onClick = {
+        ScreenHeader("Darkroom", "Library", { if (!saving) back() }) {
+            TextButton(enabled = editsLoaded && source != null && !exporting && !saving, onClick = {
                 val exportRecipe = recipe
                 scope.launch {
                     exporting = true
@@ -158,7 +175,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
         }
 
         var selectedTool by rememberSaveable { mutableStateOf("Exposure") }
-        Column(Modifier.padding(top = 6.dp)) {
+        if (editsLoaded) Column(Modifier.padding(top = 6.dp)) {
             FilmPicker(recipe.film) { if (recipe.film != it) commit(recipe.copy(film = it, vignette = it.vignette)) }
             val controls = listOf(
                 EditControl("Exposure", recipe.exposure, -2f..2f) { draft = (draft ?: history.current).copy(exposure = it) },
@@ -181,6 +198,22 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                TextButton(enabled = source != null && !saving && !exporting && draft == null, onClick = {
+                    val snapshot = history
+                    saving = true
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { library.saveEdits(photo, snapshot) }
+                            message = "Edits saved"
+                        } catch (failure: CancellationException) {
+                            throw failure
+                        } catch (_: Exception) {
+                            message = "Edits could not be saved. Try again."
+                        } finally {
+                            saving = false
+                        }
+                    }
+                }) { Text(if (saving) "Saving…" else "Save edits") }
                 TextButton(enabled = history.canUndo && draft == null, onClick = { history = history.undo() }) {
                     Text("Undo")
                 }
@@ -211,22 +244,9 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
 private data class EditControl(val label: String, val value: Float, val range: ClosedFloatingPointRange<Float>,
     val change: (Float) -> Unit)
 
-private val EditHistorySaver = listSaver<EditHistory, Any>(
-    save = { history ->
-        listOf(history.cursor) + history.snapshots.flatMap {
-            listOf(it.film.name, it.exposure, it.contrast, it.saturation, it.warmth, it.vignette, it.quarterTurns)
-        }
-    },
-    restore = { values ->
-        val cursor = values.firstOrNull() as? Int ?: return@listSaver null
-        val steps = values.drop(1)
-        if (steps.size % 7 != 0) return@listSaver null
-        val recipes = steps.chunked(7).map {
-            Recipe(Film.valueOf(it[0] as String), it[1] as Float, it[2] as Float, it[3] as Float,
-                it[4] as Float, it[5] as Float, it[6] as Int)
-        }
-        EditHistory.restore(recipes, cursor)
-    }
+private val EditHistorySaver = Saver<EditHistory, Any>(
+    save = { EditHistoryCodec.encode(it) },
+    restore = { (it as? String)?.let(EditHistoryCodec::decode) }
 )
 
 @Composable
