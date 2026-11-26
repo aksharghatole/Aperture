@@ -88,6 +88,13 @@ class PhotoLibrary(private val context: Context) {
         }
     }
 
+    fun delete(photo: Photo) = synchronized(editFileLock) {
+        check(photo.file.parentFile == directory) { "Photo does not belong to this library" }
+        if (!photo.file.isFile) throw FileNotFoundException("Photo no longer exists")
+        if (!photo.file.delete()) throw IOException("Could not remove the photo")
+        AtomicFile(File(directory, "${photo.file.name}.edits")).delete()
+    }
+
     private fun editFile(photo: Photo): AtomicFile {
         check(photo.file.parentFile == directory && photo.file.isFile)
         return AtomicFile(File(directory, "${photo.file.name}.edits"))
