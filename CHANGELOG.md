@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added Master RGB and individual red, green, and blue curves with live previews.
+- Clear frame-analysis guidance after invalid frames or 800 ms without a fresh reading.
 - Added a confirmed Delete action in Darkroom that removes a photo and its saved edit history from the local library.
 - Added Library batch export for selected photos with full-resolution output and saved edits.
 - Added non-destructive crop presets with drag positioning and full-resolution export.

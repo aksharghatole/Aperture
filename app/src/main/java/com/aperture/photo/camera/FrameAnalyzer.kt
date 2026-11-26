@@ -4,10 +4,10 @@ import android.os.SystemClock
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 
-class FrameAnalyzer(
+internal class FrameAnalyzer(
     private val mirrored: Boolean,
     private val shootingMode: () -> ShootingMode,
-    private val onScene: (ShootingMode, Scene) -> Unit
+    private val onScene: (ShootingMode, SceneReading?) -> Unit
 ) : ImageAnalysis.Analyzer {
     private var lastFrame = 0L
     private var previousMode: ShootingMode? = null
@@ -17,12 +17,12 @@ class FrameAnalyzer(
     private val portraitDetector by lazy { PortraitDetector() }
 
     override fun analyze(image: ImageProxy) {
+        val mode = shootingMode()
         try {
             val now = SystemClock.elapsedRealtime()
-            val mode = shootingMode()
             val interval = if (mode == ShootingMode.PORTRAIT) 350 else 200
             if (mode == previousMode && now - lastFrame < interval) return
-            if (now - lastFrame > 800 || mode != previousMode) {
+            if (now - lastFrame >= SceneReading.MaxAgeMillis || mode != previousMode) {
                 detailTracker.update(null)
                 faceTracker.update(null)
             }
@@ -30,8 +30,7 @@ class FrameAnalyzer(
             previousMode = mode
             val frame = LumaFrame(image)
             if (!frame.isValid) {
-                detailTracker.update(null)
-                faceTracker.update(null)
+                invalidate(mode)
                 return
             }
             for (y in 0 until Size) {
@@ -44,10 +43,19 @@ class FrameAnalyzer(
             val eyes = if (mode == ShootingMode.PORTRAIT) {
                 faceTracker.update(portraitDetector.detect(frame, mirrored))
             } else null
-            onScene(mode, scene.copy(focus = detailTracker.update(scene.focus), portraitEyes = eyes))
+            val tracked = scene.copy(focus = detailTracker.update(scene.focus), portraitEyes = eyes)
+            onScene(mode, SceneReading(tracked, now))
+        } catch (_: RuntimeException) {
+            invalidate(mode)
         } finally {
             image.close()
         }
+    }
+
+    private fun invalidate(mode: ShootingMode) {
+        detailTracker.update(null)
+        faceTracker.update(null)
+        onScene(mode, null)
     }
 
     private companion object { const val Size = 40 }
