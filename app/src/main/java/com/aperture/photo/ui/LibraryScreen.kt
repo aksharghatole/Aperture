@@ -302,6 +302,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
             FilmPicker(recipe.film) { if (recipe.film != it) commit(recipe.copy(film = it, vignette = it.vignette)) }
             val controls = listOf(
                 EditControl("Exposure", recipe.exposure, -2f..2f) { draft = (draft ?: history.current).copy(exposure = it) },
+                EditControl("Shadows", recipe.shadows, -1f..1f) { draft = (draft ?: history.current).copy(shadows = it) },
+                EditControl("Highlights", recipe.highlights, -1f..1f) { draft = (draft ?: history.current).copy(highlights = it) },
                 EditControl("Contrast", recipe.contrast, -0.5f..0.5f) { draft = (draft ?: history.current).copy(contrast = it) },
                 EditControl("Color", recipe.saturation, -1f..1f) { draft = (draft ?: history.current).copy(saturation = it) },
                 EditControl("Warmth", recipe.warmth, -1f..1f) { draft = (draft ?: history.current).copy(warmth = it) },

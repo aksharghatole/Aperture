@@ -17,7 +17,7 @@ internal class LuminanceHistogram private constructor(
             val red = (pixel ushr 16) and 255
             val green = (pixel ushr 8) and 255
             val blue = pixel and 255
-            val luma = (2126 * red + 7152 * green + 722 * blue + 5000) / 10000
+            val luma = luma(red, green, blue)
             bins[luma / 4]++
             count++
             if (luma <= 5) nearBlack++

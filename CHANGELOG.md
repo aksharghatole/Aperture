@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added independent Darkroom shadow and highlight controls.
 - Added Library batch export for selected photos with full-resolution output and saved edits.
 - Added non-destructive crop presets with drag positioning and full-resolution export.
 - Added a live Darkroom luminance histogram with near-black and near-white percentages.
