@@ -5,18 +5,21 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.library.PhotoLibrary
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class PhotoWorkflowTest {
-    @Test fun originalSurvivesFilmEditAndFullResolutionExport() {
+    @Test fun originalSurvivesSavedEditsAndFullResolutionExport() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val library = PhotoLibrary(context)
         val pending = library.beginCapture()
@@ -31,7 +34,17 @@ class PhotoWorkflowTest {
         val photo = library.commitCapture(pending, Film.SILVER)
         try {
             assertTrue(library.all().contains(photo))
-            val uri = library.export(photo, Recipe(photo.film, quarterTurns = 1))
+            assertNull(library.loadEdits(photo))
+            val initial = Recipe(photo.film)
+            val rotated = initial.copy(quarterTurns = 1)
+            val adjusted = rotated.copy(exposure = .5f)
+            library.saveEdits(photo, EditHistory(initial).commit(rotated).commit(adjusted).undo())
+            val reloaded = checkNotNull(PhotoLibrary(context).loadEdits(photo))
+            assertEquals(rotated, reloaded.current)
+            assertEquals(initial, reloaded.undo().current)
+            assertEquals(adjusted, reloaded.redo().current)
+            assertEquals(listOf(photo), library.all().filter { it.file.name.startsWith(photo.file.name) })
+            val uri = library.export(photo, reloaded.current)
             try {
                 context.contentResolver.openInputStream(uri)!!.use {
                     val output = BitmapFactory.decodeStream(it)
@@ -50,6 +63,7 @@ class PhotoWorkflowTest {
                 context.contentResolver.delete(uri, null, null)
             }
         } finally {
+            File(photo.file.parentFile, "${photo.file.name}.edits").delete()
             photo.file.delete()
         }
     }

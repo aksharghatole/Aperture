@@ -4,10 +4,14 @@ import android.content.ContentValues
 import android.content.Context
 import android.net.Uri
 import android.provider.MediaStore
+import android.util.AtomicFile
+import com.aperture.photo.imaging.EditHistory
+import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.IOException
 import java.util.UUID
 
@@ -49,6 +53,49 @@ class PhotoLibrary(private val context: Context) {
 
     private fun destination(film: Film): File =
         File(directory, "${System.currentTimeMillis()}-${UUID.randomUUID()}_${film.name}.photo")
+
+    internal fun loadEdits(photo: Photo): EditHistory? = synchronized(editFileLock) {
+        val file = editFile(photo)
+        val input = try {
+            file.openRead()
+        } catch (failure: FileNotFoundException) {
+            if (!file.baseFile.exists()) return@synchronized null
+            throw failure
+        }
+        val bytes = input.use { stream ->
+            val buffer = ByteArray(EditHistoryCodec.MaxEncodedSize + 1)
+            var size = 0
+            while (size < buffer.size) {
+                val count = stream.read(buffer, size, buffer.size - size)
+                if (count < 0) break
+                size += count
+            }
+            buffer.copyOf(size)
+        }
+        if (bytes.size > EditHistoryCodec.MaxEncodedSize) throw IOException("Edit history is too large")
+        EditHistoryCodec.decode(bytes.toString(Charsets.UTF_8)) ?: throw IOException("Invalid edit history")
+    }
+
+    internal fun saveEdits(photo: Photo, history: EditHistory) = synchronized(editFileLock) {
+        val file = editFile(photo)
+        val output = file.startWrite()
+        try {
+            output.write(EditHistoryCodec.encode(history).toByteArray(Charsets.UTF_8))
+            file.finishWrite(output)
+        } catch (failure: Throwable) {
+            file.failWrite(output)
+            throw failure
+        }
+    }
+
+    private fun editFile(photo: Photo): AtomicFile {
+        check(photo.file.parentFile == directory && photo.file.isFile)
+        return AtomicFile(File(directory, "${photo.file.name}.edits"))
+    }
+
+    private companion object {
+        val editFileLock = Any()
+    }
 
     fun export(photo: Photo, recipe: Recipe): Uri {
         val source = PhotoRenderer.decode(photo.file)
