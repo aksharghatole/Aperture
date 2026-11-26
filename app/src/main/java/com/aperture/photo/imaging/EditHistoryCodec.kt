@@ -3,7 +3,7 @@ package com.aperture.photo.imaging
 /** Versioned local format. Each line after the header represents one complete edit. */
 internal object EditHistoryCodec {
     fun encode(history: EditHistory): String = buildString {
-        append("3,").append(history.cursor)
+        append("4,").append(history.cursor)
         for (recipe in history.snapshots) {
             append('\n').append(recipe.film.name)
             append(',').append(recipe.exposure).append(',').append(recipe.contrast)
@@ -12,6 +12,9 @@ internal object EditHistoryCodec {
             append(',').append(recipe.crop.left).append(',').append(recipe.crop.top)
             append(',').append(recipe.crop.right).append(',').append(recipe.crop.bottom)
             append(',').append(recipe.shadows).append(',').append(recipe.highlights)
+            for (curve in with(recipe.curves) { listOf(master, red, green, blue) }) {
+                append(',').append(curve.black).append(',').append(curve.midtone).append(',').append(curve.white)
+            }
         }
     }
 
@@ -24,6 +27,7 @@ internal object EditHistoryCodec {
             "1" -> 7
             "2" -> 11
             "3" -> 13
+            "4" -> 25
             else -> return null
         }
         val cursor = header[1].toIntOrNull() ?: return null
@@ -48,11 +52,22 @@ internal object EditHistoryCodec {
                 return null
             }
         } else CropWindow.Full
-        val shadows = if (fieldCount == 13) parts[11].toFloatOrNull() ?: return null else 0f
-        val highlights = if (fieldCount == 13) parts[12].toFloatOrNull() ?: return null else 0f
+        val shadows = if (fieldCount >= 13) parts[11].toFloatOrNull() ?: return null else 0f
+        val highlights = if (fieldCount >= 13) parts[12].toFloatOrNull() ?: return null else 0f
         if (shadows !in -1f..1f || highlights !in -1f..1f) return null
-        return Recipe(film, exposure, contrast, saturation, warmth, vignette, turns, crop, shadows, highlights)
+        val curves = if (fieldCount == 25) {
+            val channels = parts.drop(13).chunked(3).map { points ->
+                val (black, midtone, white) = points.map { it.toIntOrNull() ?: return null }
+                try {
+                    ToneCurve(black, midtone, white)
+                } catch (_: IllegalArgumentException) {
+                    return null
+                }
+            }
+            RgbCurves(channels[0], channels[1], channels[2], channels[3])
+        } else RgbCurves()
+        return Recipe(film, exposure, contrast, saturation, warmth, vignette, turns, crop, shadows, highlights, curves)
     }
 
-    const val MaxEncodedSize = 8_192
+    const val MaxEncodedSize = 12_288
 }

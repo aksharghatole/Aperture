@@ -63,9 +63,11 @@ object PhotoRenderer {
         canvas.drawBitmap(source, transform, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
             colorFilter = colorFilter(recipe)
         })
-        if (recipe.shadows != 0f || recipe.highlights != 0f) {
-            applyTones(output, ToneAdjustments(recipe.shadows, recipe.highlights))
-        }
+        val tones = if (recipe.shadows != 0f || recipe.highlights != 0f) {
+            ToneAdjustments(recipe.shadows, recipe.highlights)
+        } else null
+        val curves = if (recipe.curves != RgbCurves()) CurveLookup(recipe.curves) else null
+        if (tones != null || curves != null) applyTonalEdits(output, tones, curves)
         if (recipe.vignette > 0f) {
             val alpha = (recipe.vignette.coerceIn(0f, 1f) * 220).toInt()
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -81,11 +83,14 @@ object PhotoRenderer {
         return output
     }
 
-    private fun applyTones(bitmap: Bitmap, tones: ToneAdjustments) {
+    private fun applyTonalEdits(bitmap: Bitmap, tones: ToneAdjustments?, curves: CurveLookup?) {
         val row = IntArray(bitmap.width)
         for (y in 0 until bitmap.height) {
             bitmap.getPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
-            for (x in row.indices) row[x] = tones.apply(row[x])
+            for (x in row.indices) {
+                val toned = tones?.apply(row[x]) ?: row[x]
+                row[x] = curves?.apply(toned) ?: toned
+            }
             bitmap.setPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
         }
     }

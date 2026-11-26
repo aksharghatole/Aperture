@@ -25,5 +25,6 @@ data class Recipe(
     val quarterTurns: Int = 0,
     val crop: CropWindow = CropWindow.Full,
     val shadows: Float = 0f,
-    val highlights: Float = 0f
+    val highlights: Float = 0f,
+    val curves: RgbCurves = RgbCurves()
 )
