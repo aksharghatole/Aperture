@@ -212,7 +212,7 @@ fun PhotoThumbnail(photo: Photo, modifier: Modifier, description: String) {
 }
 
 @Composable
-fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
+fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDeleted: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val original = remember(photo) { Recipe(photo.film) }
@@ -234,6 +234,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
     var showHistogram by rememberSaveable { mutableStateOf(false) }
     var result by remember { mutableStateOf<android.net.Uri?>(null) }
     var exporting by remember { mutableStateOf(false) }
+    var deleting by remember(photo) { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(photo.file.name, library) {
@@ -248,7 +250,36 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
             editsLoaded = true
         }
     }
-    BackHandler(enabled = saving) {}
+    BackHandler(enabled = saving || deleting) {}
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { if (!deleting) confirmDelete = false },
+            title = { Text("Delete photo?") },
+            text = { Text("This permanently removes the original photo and its saved Darkroom edits from Aperture.") },
+            confirmButton = {
+                TextButton(enabled = !deleting, onClick = {
+                    confirmDelete = false
+                    deleting = true
+                    message = null
+                    scope.launch {
+                        try {
+                            withContext(Dispatchers.IO) { library.delete(photo) }
+                            onDeleted()
+                        } catch (failure: CancellationException) {
+                            throw failure
+                        } catch (_: Exception) {
+                            message = "The photo could not be deleted. Try again."
+                        } finally {
+                            deleting = false
+                        }
+                    }
+                }) { Text(if (deleting) "Deleting…" else "Delete") }
+            },
+            dismissButton = {
+                TextButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text("Cancel") }
+            }
+        )
+    }
     var cropping by remember { mutableStateOf(false) }
     if (cropping) {
         val fullPreview by renderedPhoto(source, recipe.copy(crop = CropWindow.Full))
@@ -259,27 +290,32 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        ScreenHeader("Darkroom", "Library", { if (!saving) back() }) {
-            TextButton(enabled = editsLoaded && source != null && !exporting && !saving, onClick = {
-                val exportRecipe = recipe
-                scope.launch {
-                    exporting = true
-                    result = null
-                    message = "Exporting full resolution…"
-                    try {
-                        result = withContext(Dispatchers.IO) { library.export(photo, exportRecipe) }
-                        message = "Saved in Pictures/Aperture"
-                    } catch (failure: CancellationException) {
-                        throw failure
-                    } catch (_: Exception) {
-                        message = "Export failed. Check available storage and try again."
-                    } catch (_: OutOfMemoryError) {
-                        message = "Your device ran out of memory during export."
-                    } finally {
-                        exporting = false
-                    }
+        ScreenHeader("Darkroom", "Library", { if (!saving && !deleting) back() }) {
+            Row {
+                TextButton(enabled = !saving && !exporting && !deleting, onClick = { confirmDelete = true }) {
+                    Text("Delete")
                 }
-            }) { Text("Export") }
+                TextButton(enabled = editsLoaded && source != null && !exporting && !saving && !deleting, onClick = {
+                    val exportRecipe = recipe
+                    scope.launch {
+                        exporting = true
+                        result = null
+                        message = "Exporting full resolution…"
+                        try {
+                            result = withContext(Dispatchers.IO) { library.export(photo, exportRecipe) }
+                            message = "Saved in Pictures/Aperture"
+                        } catch (failure: CancellationException) {
+                            throw failure
+                        } catch (_: Exception) {
+                            message = "Export failed. Check available storage and try again."
+                        } catch (_: OutOfMemoryError) {
+                            message = "Your device ran out of memory during export."
+                        } finally {
+                            exporting = false
+                        }
+                    }
+                }) { Text("Export") }
+            }
         }
 
         Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(18.dp))
@@ -302,8 +338,6 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
             FilmPicker(recipe.film) { if (recipe.film != it) commit(recipe.copy(film = it, vignette = it.vignette)) }
             val controls = listOf(
                 EditControl("Exposure", recipe.exposure, -2f..2f) { draft = (draft ?: history.current).copy(exposure = it) },
-                EditControl("Shadows", recipe.shadows, -1f..1f) { draft = (draft ?: history.current).copy(shadows = it) },
-                EditControl("Highlights", recipe.highlights, -1f..1f) { draft = (draft ?: history.current).copy(highlights = it) },
                 EditControl("Contrast", recipe.contrast, -0.5f..0.5f) { draft = (draft ?: history.current).copy(contrast = it) },
                 EditControl("Color", recipe.saturation, -1f..1f) { draft = (draft ?: history.current).copy(saturation = it) },
                 EditControl("Warmth", recipe.warmth, -1f..1f) { draft = (draft ?: history.current).copy(warmth = it) },
