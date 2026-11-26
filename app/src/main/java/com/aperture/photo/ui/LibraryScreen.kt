@@ -120,6 +120,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
     val source = loaded?.getOrNull()
     val rendered by renderedPhoto(source, recipe)
     val preview = rendered?.getOrNull()
+    var showHistogram by rememberSaveable { mutableStateOf(false) }
     var result by remember { mutableStateOf<android.net.Uri?>(null) }
     var exporting by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -172,6 +173,9 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
                 source == null -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                 else -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
             }
+            if (image != null && showHistogram) {
+                EditorHistogram(image, Modifier.align(Alignment.BottomEnd).padding(8.dp))
+            }
         }
 
         var selectedTool by rememberSaveable { mutableStateOf("Exposure") }
@@ -214,6 +218,9 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
                         }
                     }
                 }) { Text(if (saving) "Saving…" else "Save edits") }
+                TextButton(enabled = preview != null, onClick = { showHistogram = !showHistogram }) {
+                    Text(if (showHistogram) "Hide histogram" else "Histogram")
+                }
                 TextButton(enabled = history.canUndo && draft == null, onClick = { history = history.undo() }) {
                     Text("Undo")
                 }
