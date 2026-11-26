@@ -39,6 +39,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.Role
@@ -358,9 +359,10 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.scaleToVignette(str
 @Composable
 private fun deviceRoll(): Float? {
     val context = LocalContext.current
+    val view = LocalView.current
     val owner = LocalLifecycleOwner.current
     var roll by remember { mutableStateOf<Float?>(null) }
-    DisposableEffect(context, owner) {
+    DisposableEffect(context, owner, view) {
         val manager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val sensor = manager.getDefaultSensor(Sensor.TYPE_GRAVITY) ?: manager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         var filtered: FloatArray? = null
@@ -369,7 +371,9 @@ private fun deviceRoll(): Float? {
             override fun onSensorChanged(event: SensorEvent) {
                 val values = filtered ?: event.values.copyOf().also { filtered = it }
                 for (axis in 0..2) values[axis] += (event.values[axis] - values[axis]) * .18f
-                roll = Composition.sensorRoll(values[0], values[1], values[2])
+                roll = view.display?.rotation?.let { rotation ->
+                    Composition.sensorRoll(values[0], values[1], values[2], rotation)
+                }
             }
         }
         val observer = LifecycleEventObserver { _, event ->
