@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +48,64 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
     val scope = rememberCoroutineScope()
     var importing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var selecting by rememberSaveable { mutableStateOf(false) }
+    var selected by rememberSaveable(stateSaver = SelectionSaver) { mutableStateOf(emptyList<String>()) }
+    var batchProgress by remember { mutableStateOf<BatchProgress?>(null) }
+    var stopBatch by remember { mutableStateOf(false) }
+    var batchMessage by remember { mutableStateOf<String?>(null) }
+    val pending = if (selecting) photos.filter { it.file.name in selected } else emptyList()
+    val progress = batchProgress
+
+    fun cancelSelection() {
+        selected = emptyList()
+        selecting = false
+    }
+
+    BackHandler(enabled = selecting) {
+        if (batchProgress == null) cancelSelection() else stopBatch = true
+    }
+
+    fun exportSelected() {
+        if (pending.isEmpty() || batchProgress != null) return
+        val batch = pending
+        stopBatch = false
+        batchMessage = null
+        batchProgress = BatchProgress(0, batch.size)
+        scope.launch {
+            val failures = arrayListOf<String>()
+            var exported = 0
+            var attempted = 0
+            try {
+                for (photo in batch) {
+                    if (stopBatch) break
+                    try {
+                        withContext(Dispatchers.IO) { library.exportSavedEdits(photo) }
+                        exported++
+                        selected = selected - photo.file.name
+                    } catch (failure: CancellationException) {
+                        throw failure
+                    } catch (_: Exception) {
+                        failures.add(photo.file.name)
+                    } catch (_: OutOfMemoryError) {
+                        failures.add(photo.file.name)
+                    }
+                    attempted++
+                    batchProgress = BatchProgress(attempted, batch.size)
+                }
+                selected = failures + batch.drop(attempted).map { it.file.name }
+                if (selected.isEmpty()) selecting = false
+                batchMessage = buildString {
+                    append("Exported ").append(exported).append(" of ").append(batch.size)
+                    if (failures.isNotEmpty()) append(" · ").append(failures.size).append(" failed")
+                    if (attempted < batch.size) append(" · ").append(batch.size - attempted).append(" stopped before export")
+                    if (exported > 0) append(" · Pictures/Aperture")
+                }
+            } finally {
+                batchProgress = null
+            }
+        }
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch {
             importing = true
@@ -65,8 +126,33 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        ScreenHeader("Library", "Camera", back) {
-            TextButton(enabled = !importing, onClick = { picker.launch("image/*") }) { Text("Import") }
+        ScreenHeader(if (selecting) "${progress?.total ?: pending.size} selected" else "Library",
+            if (selecting) "Done" else "Camera", {
+                if (!selecting) back()
+                else if (batchProgress == null) cancelSelection()
+            }) {
+            if (!selecting) {
+                Row {
+                    TextButton(enabled = !importing && photos.isNotEmpty(), onClick = {
+                        selecting = true
+                        batchMessage = null
+                    }) { Text("Select") }
+                    TextButton(enabled = !importing, onClick = { picker.launch("image/*") }) { Text("Import") }
+                }
+            } else if (progress == null) {
+                TextButton(enabled = pending.isNotEmpty(), onClick = ::exportSelected) { Text("Export") }
+            } else {
+                TextButton(enabled = !stopBatch, onClick = { stopBatch = true }) { Text("Stop") }
+            }
+        }
+        if (progress != null) {
+            LinearProgressIndicator(progress = { progress.completed.toFloat() / progress.total }, Modifier.fillMaxWidth())
+            Text(if (stopBatch) "Stopping after the current photo…" else
+                "Processed ${progress.completed} of ${progress.total}",
+                modifier = Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+        }
+        batchMessage?.let {
+            Text(it, modifier = Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
         if (importing) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -82,15 +168,39 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                 contentPadding = PaddingValues(bottom = 12.dp)
             ) {
                 items(photos, key = { it.file.name }) { photo ->
-                    Box(Modifier.aspectRatio(1f).clip(RoundedCornerShape(12.dp))
-                        .clickable(onClickLabel = "Edit photo") { open(photo) }) {
+                    val name = photo.file.name
+                    val checked = name in selected
+                    val tile = Modifier.aspectRatio(1f).clip(RoundedCornerShape(12.dp))
+                    val interaction = if (selecting) {
+                        tile.toggleable(value = checked, enabled = progress == null) {
+                            selected = if (it) selected + name else selected - name
+                        }
+                    } else {
+                        tile.clickable(onClickLabel = "Edit photo") { open(photo) }
+                    }
+                    Box(interaction) {
                         PhotoThumbnail(photo, Modifier.fillMaxSize(), "${photo.film.title} photo")
+                        if (selecting && checked) {
+                            Box(Modifier.matchParentSize().border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)))
+                            Surface(
+                                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            ) {
+                                Text("✓", modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                    color = MaterialTheme.colorScheme.onPrimary)
+                            }
+                        }
                     }
                 }
             }
         }
     }
 }
+
+private data class BatchProgress(val completed: Int, val total: Int)
+
+private val SelectionSaver = listSaver<List<String>, String>(save = { it }, restore = { it })
 
 @Composable
 fun PhotoThumbnail(photo: Photo, modifier: Modifier, description: String) {

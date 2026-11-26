@@ -45,7 +45,7 @@ class PhotoWorkflowTest {
             assertEquals(initial, reloaded.undo().current)
             assertEquals(adjusted, reloaded.redo().current)
             assertEquals(listOf(photo), library.all().filter { it.file.name.startsWith(photo.file.name) })
-            val uri = library.export(photo, reloaded.current)
+            val uri = library.exportSavedEdits(photo)
             try {
                 context.contentResolver.openInputStream(uri)!!.use {
                     val output = BitmapFactory.decodeStream(it)

@@ -19,6 +19,7 @@ GitHub Actions runs the build checks and uploads an installable debug APK. With 
 2. Tap the preview to focus, choose a film look, and take a photo. Flip is available on devices with both front and rear cameras.
 3. Open Library, select a capture, or import an image. Darkroom adjusts exposure, contrast, saturation, warmth, vignette, and rotation.
 4. Export a full-resolution JPEG to `Pictures/Aperture`. The captured or imported original stays in the app library. Darkroom keeps up to 40 edit states for undo and redo. Use **Save edits** to restore that history when reopening the photo. Toggle **Histogram** to see the edited preview’s luminance distribution and sampled near-black and near-white percentages. Use **Crop** to select an aspect ratio and drag the frame into position before applying.
+5. To export several photos, tap **Select** in Library, pick the photos, and tap **Export**. Batch export uses each photo’s saved edits. Failed and unprocessed photos stay selected for retry.
 
 Use **Reference** to pick an image and adjust its opacity. The overlay is center-cropped to the viewfinder and stays in the camera session. It guides framing visually and is excluded from saved photos.
 

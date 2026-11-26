@@ -97,6 +97,9 @@ class PhotoLibrary(private val context: Context) {
         val editFileLock = Any()
     }
 
+    fun exportSavedEdits(photo: Photo): Uri =
+        export(photo, loadEdits(photo)?.current ?: Recipe(photo.film))
+
     fun export(photo: Photo, recipe: Recipe): Uri {
         val source = PhotoRenderer.decode(photo.file)
         val rendered = try {
