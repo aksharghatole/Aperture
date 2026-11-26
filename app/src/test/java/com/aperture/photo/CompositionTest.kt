@@ -3,6 +3,7 @@ package com.aperture.photo
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.DetailTracker
 import com.aperture.photo.camera.ShootingMode
+import com.aperture.photo.camera.PortraitFraming
 import com.aperture.photo.camera.FocusRegion
 import com.aperture.photo.camera.Framing
 import com.aperture.photo.camera.Scene
@@ -51,8 +52,8 @@ class CompositionTest {
     }
 
     @Test fun shootingModesUseDifferentMeasuredCues() {
-        val dim = Scene(62, .5f, 0f, FocusRegion(.5f, 1f / 3f))
-        assertEquals("Detail near the framing guide", Composition.guidance(dim, 0f, ShootingMode.PORTRAIT))
+        val dim = Scene(62, .5f, 0f, null, portraitEyes = FocusRegion(.5f, 1f / 3f))
+        assertEquals("Eyes near the framing guide", Composition.guidance(dim, 0f, ShootingMode.PORTRAIT))
         assertEquals("Low light · hold steady", Composition.guidance(dim, 0f, ShootingMode.NIGHT))
         assertEquals("Rotate clockwise · 3°", Composition.guidance(dim, 3f, ShootingMode.ARCHITECTURE))
         assertEquals("Camera level", Composition.guidance(dim, 0f, ShootingMode.LANDSCAPE))
@@ -70,6 +71,25 @@ class CompositionTest {
         assertEquals(right, tracker.update(right))
         assertNull(tracker.update(null))
         assertNull(tracker.update(right))
+    }
+
+    @Test fun portraitUsesEyesAndWithholdsAimingWhenOnlyVisualDetailIsAvailable() {
+        val scene = Scene(130, 0f, 0f, FocusRegion(.8f, .5f))
+        assertEquals("Place the eyes near the upper guide", Composition.guidance(scene, 0f, ShootingMode.PORTRAIT))
+        assertNull(Composition.framingPoint(scene, ShootingMode.PORTRAIT))
+        val face = scene.copy(portraitEyes = FocusRegion(.2f, 1f / 3f))
+        assertEquals("Aim a little left", Composition.guidance(face, 0f, ShootingMode.PORTRAIT))
+        assertEquals(face.portraitEyes, Composition.framingPoint(face, ShootingMode.PORTRAIT))
+        assertEquals(scene.focus, Composition.framingPoint(face, ShootingMode.STREET))
+    }
+
+    @Test fun portraitRejectsAmbiguousDetectionsAndMirrorsPreviewCoordinates() {
+        assertNull(PortraitFraming.eyePoint(2, .95f, .2f, .4f, .1f, false))
+        assertNull(PortraitFraming.eyePoint(1, .5f, .2f, .4f, .1f, false))
+        assertNull(PortraitFraming.eyePoint(1, .9f, .02f, .4f, .1f, false))
+        assertNull(PortraitFraming.eyePoint(1, .9f, .2f, .4f, .01f, false))
+        assertEquals(FocusRegion(.2f, .4f), PortraitFraming.eyePoint(1, .9f, .2f, .4f, .1f, false))
+        assertEquals(FocusRegion(.8f, .4f), PortraitFraming.eyePoint(1, .9f, .2f, .4f, .1f, true))
     }
 
     @Test fun gravityRollPrefersCardinalOrientationsAndWithholdsNearFlatReading() {

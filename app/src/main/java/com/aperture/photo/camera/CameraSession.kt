@@ -41,6 +41,7 @@ class CameraSession(
     private var canFlip = false
     private var front = false
     private var film = Film.CLEAN
+    @Volatile var shootingMode = ShootingMode.STREET
 
     private val layoutListener = View.OnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
         if (right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop) bind()
@@ -87,8 +88,10 @@ class CameraSession(
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build()
             val analysisUseCase = ImageAnalysis.Builder().setTargetRotation(rotation)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
-            val sceneAnalyzer = FrameAnalyzer(front) { scene ->
-                main.execute { if (!closed && analysis === analysisUseCase) onScene(scene) }
+            val sceneAnalyzer = FrameAnalyzer(front, { shootingMode }) { mode, scene ->
+                main.execute {
+                    if (!closed && analysis === analysisUseCase && mode == shootingMode) onScene(scene)
+                }
             }
             val group = UseCaseGroup.Builder().setViewPort(viewport)
                 .addUseCase(previewUseCase).addUseCase(captureUseCase)

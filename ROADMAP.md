@@ -13,9 +13,13 @@
 - Directional guidance requires consecutive detail measurements.
 - Pick a reference photo and adjust its viewfinder opacity for manual alignment.
 
+## 0.3 · Portrait face framing
+
+- Guide one confidently detected frontal face toward the upper portrait guide using the device’s offline face detector.
+
 ## Camera assistant
 
-- Add offline subject detection with confidence gating to refine framing in each shooting mode.
+- Extend offline subject detection beyond single frontal faces and refine framing in other shooting modes.
 - Validate lighting and background metrics against representative scenes. Gate distance or translation cues on evidence from calibrated depth or motion when supported.
 - Add automatic reference image alignment, accessibility controls for voice and haptics, and opt-in automatic capture.
 

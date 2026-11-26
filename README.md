@@ -22,6 +22,8 @@ GitHub Actions runs the build checks and uploads an installable debug APK. With 
 
 Use **Reference** to pick an image and adjust its opacity. The overlay is center-cropped to the viewfinder and stays in the camera session. It guides framing visually and is excluded from saved photos.
 
+Portrait mode uses Android’s offline frontal face detector. It shows an eye-position cue after two nearby detections of a single confident face. Groups, profiles, small faces, and devices without working detection can use the upper guide manually.
+
 The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device.
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.

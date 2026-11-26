@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- Added offline frontal face framing in Portrait mode, with confidence and stability checks before showing aim cues.
+
 ## 0.2.0
 
 - Added seven shooting modes with framing, level, and lighting guidance.

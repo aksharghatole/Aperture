@@ -115,7 +115,12 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                         session = connection
                         onDispose { connection.close(); session = null }
                     }
-                    SideEffect { session?.setFilm(film) }
+                    SideEffect {
+                        session?.let { connection ->
+                            connection.setFilm(film)
+                            connection.shootingMode = mode
+                        }
+                    }
                 }
 
                 if (ready) {
@@ -167,7 +172,9 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ShootingMode.entries.forEach { item ->
                     FilterChip(selected = item == mode, onClick = {
+                        if (mode != item) scene = null
                         mode = item
+                        session?.shootingMode = item
                         captureMessage = null
                     }, label = { Text(item.title) })
                 }
@@ -305,7 +312,7 @@ private fun GuideOverlay(scene: Scene?, roll: Float?, mode: ShootingMode, modifi
             val anchor = Offset(size.width * framing.anchorX, size.height * framing.anchorY)
             drawCircle(white, 34.dp.toPx(), anchor, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         }
-        if (framing != Framing.HORIZON) scene?.focus?.let {
+        Composition.framingPoint(scene, mode)?.let {
             val point = Offset(it.x * size.width, it.y * size.height)
             drawCircle(Color.Black.copy(alpha = .65f), 8.dp.toPx(), point)
             drawCircle(accent, 5.dp.toPx(), point, style = androidx.compose.ui.graphics.drawscope.Stroke(1.4.dp.toPx()))

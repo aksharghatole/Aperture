@@ -32,7 +32,8 @@ data class Scene(
     val brightness: Int,
     val shadowFraction: Float,
     val highlightFraction: Float,
-    val focus: FocusRegion?
+    val focus: FocusRegion?,
+    val portraitEyes: FocusRegion? = null
 )
 
 /** Finds a dominant cluster of detail in the preview. This is not object recognition. */
@@ -90,11 +91,18 @@ object Composition {
 
     fun guidance(scene: Scene?, roll: Float?, mode: ShootingMode, analysisAvailable: Boolean = true): String =
         guidance(scene, roll, mode.framing, analysisAvailable, mode.rollTolerance,
-            mode.aimTolerance, mode.lowLightBrightness)
+            mode.aimTolerance, mode.lowLightBrightness, mode == ShootingMode.PORTRAIT)
+
+    fun framingPoint(scene: Scene?, mode: ShootingMode): FocusRegion? = when (mode) {
+        ShootingMode.PORTRAIT -> scene?.portraitEyes
+        ShootingMode.LANDSCAPE -> null
+        else -> scene?.focus
+    }
 
     fun guidance(
         scene: Scene?, roll: Float?, framing: Framing, analysisAvailable: Boolean = true,
-        rollTolerance: Float = 4f, aimTolerance: Float = .14f, lowLightBrightness: Int = 52
+        rollTolerance: Float = 4f, aimTolerance: Float = .14f, lowLightBrightness: Int = 52,
+        portrait: Boolean = false
     ): String {
         if (roll != null && abs(roll) >= rollTolerance) {
             val direction = if (roll > 0) "clockwise" else "counterclockwise"
@@ -104,20 +112,21 @@ object Composition {
         if (framing == Framing.HORIZON && scene == null) {
             return if (roll == null) "Use the horizon guide" else "Camera level"
         }
-        if (scene == null) return "Use the grid to frame your subject"
+        val manualGuide = if (portrait) "Place the eyes near the upper guide" else "Use the grid to frame your subject"
+        if (scene == null) return manualGuide
         if (scene.brightness < lowLightBrightness && scene.shadowFraction > .45f) return "Low light · hold steady"
         if (scene.highlightFraction > .28f) return "Bright areas may lose detail"
         if (framing == Framing.HORIZON) {
             return if (roll == null) "Use the grid to judge the horizon" else "Camera level"
         }
-        val focus = scene.focus ?: return "Use the grid to frame your subject"
+        val focus = (if (portrait) scene.portraitEyes else scene.focus) ?: return manualGuide
         val x = if (framing == Framing.THIRDS && focus.x > .5f) 1f - framing.anchorX else framing.anchorX
         val dx = focus.x - x
         val dy = focus.y - framing.anchorY
         return when {
             abs(dx) > aimTolerance && abs(dx) >= abs(dy) -> if (dx > 0) "Aim a little right" else "Aim a little left"
             abs(dy) > aimTolerance -> if (dy > 0) "Aim a little lower" else "Aim a little higher"
-            else -> "Detail near the framing guide"
+            else -> if (portrait) "Eyes near the framing guide" else "Detail near the framing guide"
         }
     }
 
