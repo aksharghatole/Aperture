@@ -5,13 +5,15 @@ import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.Recipe
+import com.aperture.photo.imaging.RgbCurves
+import com.aperture.photo.imaging.ToneCurve
 import org.junit.Assert.*
 import org.junit.Test
 
 class EditHistoryCodecTest {
     @Test fun roundTripRestoresCurrentRecipeAndRedoBranch() {
         val initial = Recipe(Film.AMBER)
-        val adjusted = initial.copy(exposure = 1f, warmth = -.2f, shadows = .6f, highlights = -.5f)
+        val adjusted = initial.copy(exposure = 1f, warmth = -.2f, shadows = .6f, highlights = -.5f, curves = RgbCurves(red = ToneCurve(7, 113, 225)))
         val rotated = adjusted.copy(quarterTurns = 1, crop = CropWindow(.1f, .2f, .8f, .9f))
         val original = EditHistory(initial).commit(adjusted).commit(rotated).undo()
         val restored = EditHistoryCodec.decode(EditHistoryCodec.encode(original))!!
@@ -34,13 +36,18 @@ class EditHistoryCodecTest {
             EditHistoryCodec.decode(versionTwo)?.current)
     }
 
+    @Test fun loadsVersionThreeWithNeutralCurves() {
+        val saved = "3,0\nCLEAN,0.0,0.0,0.0,0.0,0.0,0,0.0,0.0,1.0,1.0,0.25,-0.5"
+        assertEquals(Recipe(shadows = .25f, highlights = -.5f), EditHistoryCodec.decode(saved)?.current)
+    }
+
     @Test fun rejectsInvalidAndUnknownEditFiles() {
         val valid = EditHistoryCodec.encode(EditHistory(Recipe()))
-        assertNull(EditHistoryCodec.decode(valid.replaceFirst("3,0", "4,0")))
-        assertNull(EditHistoryCodec.decode(valid.replaceFirst("3,0", "3,3")))
+        assertNull(EditHistoryCodec.decode(valid.replaceFirst("4,0", "5,0")))
+        assertNull(EditHistoryCodec.decode(valid.replaceFirst("4,0", "4,3")))
         assertNull(EditHistoryCodec.decode(valid.replaceFirst("0.0", "NaN")))
         assertNull(EditHistoryCodec.decode(valid.replace("CLEAN", "UNKNOWN")))
         assertNull(EditHistoryCodec.decode(valid.substringBeforeLast(',')))
-        assertNull(EditHistoryCodec.decode("x".repeat(8193)))
+        assertNull(EditHistoryCodec.decode("x".repeat(EditHistoryCodec.MaxEncodedSize + 1)))
     }
 }

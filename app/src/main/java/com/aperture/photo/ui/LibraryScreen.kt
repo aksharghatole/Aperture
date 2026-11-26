@@ -36,6 +36,7 @@ import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
+import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
 import kotlinx.coroutines.CancellationException
@@ -229,7 +230,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     }
     val loaded by loadedPhoto(photo, 1400)
     val source = loaded?.getOrNull()
-    val rendered by renderedPhoto(source, recipe)
+    var curveDraft by remember(photo) { mutableStateOf<RgbCurves?>(null) }
+    val rendered by renderedPhoto(source, curveDraft?.let { recipe.copy(curves = it) } ?: recipe)
     val preview = rendered?.getOrNull()
     var showHistogram by rememberSaveable { mutableStateOf(false) }
     var result by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -279,6 +281,12 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                 TextButton(enabled = !deleting, onClick = { confirmDelete = false }) { Text("Cancel") }
             }
         )
+    }
+    curveDraft?.let { curves ->
+        EditorCurves(curves, preview, { curveDraft = it }, { curveDraft = null }) {
+            commit(recipe.copy(curves = curves))
+            curveDraft = null
+        }
     }
     var cropping by remember { mutableStateOf(false) }
     if (cropping) {
@@ -377,6 +385,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                     Text(if (showHistogram) "Hide histogram" else "Histogram")
                 }
                 TextButton(enabled = source != null && draft == null, onClick = { cropping = true }) { Text("Crop") }
+                TextButton(enabled = source != null && draft == null, onClick = { curveDraft = recipe.curves }) { Text("Curves") }
                 TextButton(enabled = history.canUndo && draft == null, onClick = { history = history.undo() }) {
                     Text("Undo")
                 }

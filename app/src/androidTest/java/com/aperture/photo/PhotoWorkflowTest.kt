@@ -9,6 +9,9 @@ import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.Recipe
+import com.aperture.photo.imaging.PhotoRenderer
+import com.aperture.photo.imaging.RgbCurves
+import com.aperture.photo.imaging.ToneCurve
 import com.aperture.photo.library.PhotoLibrary
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -20,6 +23,25 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class PhotoWorkflowTest {
+    @Test fun rendererAppliesMasterAndChannelCurvesToOutput() {
+        val source = Bitmap.createBitmap(2, 1, Bitmap.Config.ARGB_8888)
+        source.setPixel(0, 0, Color.rgb(128, 128, 128))
+        source.setPixel(1, 0, Color.rgb(0, 0, 0))
+        try {
+            val recipe = Recipe(curves = RgbCurves(master = ToneCurve(midtone = 64), red = ToneCurve(midtone = 192)))
+            val rendered = PhotoRenderer.render(source, recipe)
+            try {
+                assertEquals(Color.rgb(96, 64, 64), rendered.getPixel(0, 0))
+                assertEquals(Color.BLACK, rendered.getPixel(1, 0))
+                assertEquals(Color.rgb(128, 128, 128), source.getPixel(0, 0))
+            } finally {
+                rendered.recycle()
+            }
+        } finally {
+            source.recycle()
+        }
+    }
+
     @Test fun deletingPhotoWithoutSavedEditsRemovesOriginal() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val library = PhotoLibrary(context)
