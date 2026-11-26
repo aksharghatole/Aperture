@@ -30,6 +30,8 @@
 
 ## PocketDarkroom
 
+- Session undo and redo for Darkroom edits.
+
 - Add persistent edit history, batch export, crop and perspective, histograms, RGB curves, HSL, and color grading.
 - Add local adjustment masks, sharpening, and noise reduction. Explore Camera2 RAW capability and DNG decode and export on supported hardware.
 - Profile GPU processing, full-resolution memory use, and compatibility on Android 10+ devices.

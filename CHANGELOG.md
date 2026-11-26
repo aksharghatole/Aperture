@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added Darkroom undo and redo for film selection, adjustments, rotation, and reset. A slider gesture creates one history step.
+
 ## 0.3.0
 
 - Added offline frontal face framing in Portrait mode, with confidence and stability checks before showing aim cues.
