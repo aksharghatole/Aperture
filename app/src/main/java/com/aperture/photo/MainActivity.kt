@@ -57,7 +57,10 @@ class MainActivity : ComponentActivity() {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                         when {
-                            selected != null -> EditorScreen(selected, library) { selectedName = null }
+                            selected != null -> EditorScreen(selected, library, { selectedName = null }) {
+                                revision++
+                                selectedName = null
+                            }
                             inLibrary -> LibraryScreen(photos, library, { inLibrary = false }) {
                                 revision++
                                 selectedName = it.file.name
