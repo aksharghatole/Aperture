@@ -7,6 +7,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -25,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
@@ -100,7 +103,16 @@ fun PhotoThumbnail(photo: Photo, modifier: Modifier, description: String) {
 fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var recipe by rememberSaveable(photo.file.name, stateSaver = RecipeSaver) { mutableStateOf(Recipe(photo.film)) }
+    val original = remember(photo) { Recipe(photo.film) }
+    var history by rememberSaveable(photo.file.name, stateSaver = EditHistorySaver) {
+        mutableStateOf(EditHistory(original))
+    }
+    var draft by remember(photo) { mutableStateOf<Recipe?>(null) }
+    val recipe = draft ?: history.current
+    fun commit(edit: Recipe) {
+        history = history.commit(edit)
+        draft = null
+    }
     val loaded by loadedPhoto(photo, 1400)
     val source = loaded?.getOrNull()
     val rendered by renderedPhoto(source, recipe)
@@ -147,13 +159,13 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
 
         var selectedTool by rememberSaveable { mutableStateOf("Exposure") }
         Column(Modifier.padding(top = 6.dp)) {
-            FilmPicker(recipe.film) { recipe = recipe.copy(film = it, vignette = it.vignette) }
+            FilmPicker(recipe.film) { if (recipe.film != it) commit(recipe.copy(film = it, vignette = it.vignette)) }
             val controls = listOf(
-                EditControl("Exposure", recipe.exposure, -2f..2f) { recipe = recipe.copy(exposure = it) },
-                EditControl("Contrast", recipe.contrast, -0.5f..0.5f) { recipe = recipe.copy(contrast = it) },
-                EditControl("Color", recipe.saturation, -1f..1f) { recipe = recipe.copy(saturation = it) },
-                EditControl("Warmth", recipe.warmth, -1f..1f) { recipe = recipe.copy(warmth = it) },
-                EditControl("Vignette", recipe.vignette, 0f..1f) { recipe = recipe.copy(vignette = it) }
+                EditControl("Exposure", recipe.exposure, -2f..2f) { draft = (draft ?: history.current).copy(exposure = it) },
+                EditControl("Contrast", recipe.contrast, -0.5f..0.5f) { draft = (draft ?: history.current).copy(contrast = it) },
+                EditControl("Color", recipe.saturation, -1f..1f) { draft = (draft ?: history.current).copy(saturation = it) },
+                EditControl("Warmth", recipe.warmth, -1f..1f) { draft = (draft ?: history.current).copy(warmth = it) },
+                EditControl("Vignette", recipe.vignette, 0f..1f) { draft = (draft ?: history.current).copy(vignette = it) }
             )
             val tool = controls.first { it.label == selectedTool }
             androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,11 +175,20 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
                         label = { Text(option.label, fontSize = 11.sp) })
                 }
             }
-            Slider(value = tool.value, onValueChange = tool.change, valueRange = tool.range)
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { recipe = recipe.copy(quarterTurns = (recipe.quarterTurns + 1) % 4) }) { Text("Rotate") }
-                TextButton(onClick = { recipe = Recipe(photo.film) }) { Text("Reset") }
-                Spacer(Modifier.weight(1f))
+            Slider(value = tool.value, onValueChange = tool.change, valueRange = tool.range,
+                onValueChangeFinished = { draft?.let(::commit) })
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(enabled = history.canUndo && draft == null, onClick = { history = history.undo() }) {
+                    Text("Undo")
+                }
+                TextButton(enabled = history.canRedo && draft == null, onClick = { history = history.redo() }) {
+                    Text("Redo")
+                }
+                TextButton(onClick = { commit(recipe.copy(quarterTurns = (recipe.quarterTurns + 1) % 4)) }) { Text("Rotate") }
+                TextButton(onClick = { commit(original) }) { Text("Reset") }
                 result?.let { uri ->
                     TextButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND).apply {
@@ -190,10 +211,22 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
 private data class EditControl(val label: String, val value: Float, val range: ClosedFloatingPointRange<Float>,
     val change: (Float) -> Unit)
 
-private val RecipeSaver = listSaver<Recipe, Any>(
-    save = { listOf(it.film.name, it.exposure, it.contrast, it.saturation, it.warmth, it.vignette, it.quarterTurns) },
-    restore = { Recipe(Film.valueOf(it[0] as String), it[1] as Float, it[2] as Float, it[3] as Float,
-        it[4] as Float, it[5] as Float, it[6] as Int) }
+private val EditHistorySaver = listSaver<EditHistory, Any>(
+    save = { history ->
+        listOf(history.cursor) + history.snapshots.flatMap {
+            listOf(it.film.name, it.exposure, it.contrast, it.saturation, it.warmth, it.vignette, it.quarterTurns)
+        }
+    },
+    restore = { values ->
+        val cursor = values.firstOrNull() as? Int ?: return@listSaver null
+        val steps = values.drop(1)
+        if (steps.size % 7 != 0) return@listSaver null
+        val recipes = steps.chunked(7).map {
+            Recipe(Film.valueOf(it[0] as String), it[1] as Float, it[2] as Float, it[3] as Float,
+                it[4] as Float, it[5] as Float, it[6] as Int)
+        }
+        EditHistory.restore(recipes, cursor)
+    }
 )
 
 @Composable
