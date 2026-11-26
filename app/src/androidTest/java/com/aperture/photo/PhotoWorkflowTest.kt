@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.Recipe
@@ -36,7 +37,7 @@ class PhotoWorkflowTest {
             assertTrue(library.all().contains(photo))
             assertNull(library.loadEdits(photo))
             val initial = Recipe(photo.film)
-            val rotated = initial.copy(quarterTurns = 1)
+            val rotated = initial.copy(quarterTurns = 1, crop = CropWindow(.25f, .125f, .75f, .875f))
             val adjusted = rotated.copy(exposure = .5f)
             library.saveEdits(photo, EditHistory(initial).commit(rotated).commit(adjusted).undo())
             val reloaded = checkNotNull(PhotoLibrary(context).loadEdits(photo))
@@ -49,9 +50,9 @@ class PhotoWorkflowTest {
                 context.contentResolver.openInputStream(uri)!!.use {
                     val output = BitmapFactory.decodeStream(it)
                     try {
-                        assertEquals(640, output.width)
-                        assertEquals(960, output.height)
-                        val pixel = output.getPixel(320, 480)
+                        assertEquals(320, output.width)
+                        assertEquals(720, output.height)
+                        val pixel = output.getPixel(160, 360)
                         assertEquals(Color.red(pixel), Color.green(pixel))
                         assertEquals(Color.green(pixel), Color.blue(pixel))
                     } finally {
