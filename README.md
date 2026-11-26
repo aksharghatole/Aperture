@@ -1,1 +1,25 @@
 # Aperture
+
+Aperture is an offline photography app for Android 10 and newer. Its first milestone includes a CameraX viewfinder, composition and level guidance, live film looks, an on-device library, and a basic darkroom.
+
+## Build
+
+Use JDK 17 or 21, Android SDK Platform 35, and Build Tools 35.0.0. Set `ANDROID_HOME` to the SDK path or create an Android Studio `local.properties` file.
+
+```sh
+./gradlew testDebugUnitTest lintDebug assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+GitHub Actions runs the build checks and uploads an installable debug APK. With a device or emulator connected, run `./gradlew connectedDebugAndroidTest` to verify that a full-resolution export preserves the original. Subsequent milestones are in [ROADMAP.md](ROADMAP.md).
+
+## First workflow
+
+1. Open Aperture, enable the camera, and select Thirds, Center, or Horizon.
+2. Tap the preview to focus, choose a film look, and take a photo. Flip is available on devices with both front and rear cameras.
+3. Open Library, select a capture, or import an image. Darkroom adjusts exposure, contrast, saturation, warmth, vignette, and rotation.
+4. Export a full-resolution JPEG to `Pictures/Aperture`. The captured or imported original stays in the app library. Edits are held for the current editing session.
+
+The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device.
+
+For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.
