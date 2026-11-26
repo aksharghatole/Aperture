@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +34,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +56,7 @@ import com.aperture.photo.camera.CameraSession
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.Framing
 import com.aperture.photo.camera.Scene
+import com.aperture.photo.camera.ShootingMode
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
@@ -69,7 +72,8 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
     var granted by remember { mutableStateOf(cameraPermission(context)) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var film by rememberSaveable { mutableStateOf(Film.CLEAN) }
-    var framing by rememberSaveable { mutableStateOf(Framing.THIRDS) }
+    var mode by rememberSaveable { mutableStateOf(ShootingMode.STREET) }
+    val reference = rememberCameraReference()
     var scene by remember { mutableStateOf<Scene?>(null) }
     var ready by remember { mutableStateOf(false) }
     var canFlip by remember { mutableStateOf(false) }
@@ -120,12 +124,16 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                             scaleToVignette(film.vignette)
                         }
                     }
-                    GuideOverlay(scene, roll, framing, Modifier.matchParentSize().pointerInput(session) {
+                    reference.image?.let { image ->
+                        Image(image, null, Modifier.matchParentSize(),
+                            contentScale = ContentScale.Crop, alpha = reference.opacity)
+                    }
+                    GuideOverlay(scene, roll, mode, Modifier.matchParentSize().pointerInput(session) {
                         detectTapGestures { session?.focus(it.x, it.y) }
                     })
                     Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
-                        val hint = captureMessage ?: Composition.guidance(scene, roll, framing, hasAnalysis)
+                        val hint = captureMessage ?: Composition.guidance(scene, roll, mode, hasAnalysis)
                         Text(hint, color = Color.White, fontSize = 13.sp,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .75f))
                                 .padding(horizontal = 14.dp, vertical = 8.dp))
@@ -157,9 +165,9 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
         if (granted) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Framing.entries.forEach { item ->
-                    FilterChip(selected = item == framing, onClick = {
-                        framing = item
+                ShootingMode.entries.forEach { item ->
+                    FilterChip(selected = item == mode, onClick = {
+                        mode = item
                         captureMessage = null
                     }, label = { Text(item.title) })
                 }
@@ -229,7 +237,10 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
             Row(Modifier.fillMaxWidth().height(if (wideLayout) 48.dp else 60.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Aperture", fontSize = 27.sp, fontWeight = FontWeight.Medium, letterSpacing = (-1).sp)
-                TextButton(onClick = openLibrary) { Text("Library") }
+                Row {
+                    if (granted) TextButton(onClick = reference.open) { Text("Reference") }
+                    TextButton(onClick = openLibrary) { Text("Library") }
+                }
             }
             if (wideLayout) {
                 Row(Modifier.weight(1f).fillMaxWidth().padding(bottom = 8.dp),
@@ -277,7 +288,8 @@ fun FilmPicker(film: Film, onChange: (Film) -> Unit) {
 }
 
 @Composable
-private fun GuideOverlay(scene: Scene?, roll: Float?, framing: Framing, modifier: Modifier) {
+private fun GuideOverlay(scene: Scene?, roll: Float?, mode: ShootingMode, modifier: Modifier) {
+    val framing = mode.framing
     val accent = MaterialTheme.colorScheme.primary
     Canvas(modifier) {
         val white = Color.White.copy(alpha = .37f)
@@ -289,21 +301,23 @@ private fun GuideOverlay(scene: Scene?, roll: Float?, framing: Framing, modifier
                 drawLine(white, Offset(x, 0f), Offset(x, size.height))
                 drawLine(white, Offset(0f, y), Offset(size.width, y))
             }
-        } else if (framing == Framing.CENTER) {
-            drawCircle(white, 34.dp.toPx(), center, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        } else if (framing != Framing.HORIZON) {
+            val anchor = Offset(size.width * framing.anchorX, size.height * framing.anchorY)
+            drawCircle(white, 34.dp.toPx(), anchor, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         }
         if (framing != Framing.HORIZON) scene?.focus?.let {
             val point = Offset(it.x * size.width, it.y * size.height)
             drawCircle(Color.Black.copy(alpha = .65f), 8.dp.toPx(), point)
             drawCircle(accent, 5.dp.toPx(), point, style = androidx.compose.ui.graphics.drawscope.Stroke(1.4.dp.toPx()))
         }
+        if (framing == Framing.HORIZON) drawLine(white, Offset(0f, center.y), Offset(size.width, center.y))
         if (roll != null) {
             val angle = Math.toRadians(roll.toDouble())
             val radius = 28.dp.toPx()
             val delta = Offset(radius * cos(angle).toFloat(), radius * sin(angle).toFloat())
             val origin = if (framing == Framing.HORIZON) center else center.copy(y = size.height * .08f)
             drawLine(Color.Black.copy(alpha = .6f), origin - delta, origin + delta, 4.dp.toPx())
-            drawLine(if (abs(roll) < 4f) accent else Color.White, origin - delta, origin + delta, 2.dp.toPx())
+            drawLine(if (abs(roll) < mode.rollTolerance) accent else Color.White, origin - delta, origin + delta, 2.dp.toPx())
         }
     }
 }

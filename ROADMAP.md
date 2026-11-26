@@ -7,11 +7,17 @@
 - Live film color rendering and vignettes, local library, image import, basic editing, and full-resolution JPEG export.
 - Gradle verification, GitHub Actions APK artifacts, and device smoke testing.
 
+## 0.2 · Shooting modes and reference overlay
+
+- Seven shooting modes with scene-specific framing, tilt, and low-light thresholds.
+- Directional guidance requires consecutive detail measurements.
+- Pick a reference photo and adjust its viewfinder opacity for manual alignment.
+
 ## Camera assistant
 
-- Add offline subject detection with confidence gating and mode-specific framing for portrait, landscape, street, architecture, food, macro, and night.
+- Add offline subject detection with confidence gating to refine framing in each shooting mode.
 - Validate lighting and background metrics against representative scenes. Gate distance or translation cues on evidence from calibrated depth or motion when supported.
-- Add reference image alignment and ghost overlays, accessibility controls for voice and haptics, and opt-in automatic capture.
+- Add automatic reference image alignment, accessibility controls for voice and haptics, and opt-in automatic capture.
 
 ## AnalogLab
 

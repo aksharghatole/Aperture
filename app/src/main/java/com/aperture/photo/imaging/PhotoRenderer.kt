@@ -35,7 +35,10 @@ object PhotoRenderer {
     }
 
     fun decode(file: File, maxEdge: Int? = null): Bitmap =
-        ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+        decode(ImageDecoder.createSource(file), maxEdge)
+
+    fun decode(source: ImageDecoder.Source, maxEdge: Int? = null): Bitmap =
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             if (maxEdge != null) {
                 val longest = maxOf(info.size.width, info.size.height)

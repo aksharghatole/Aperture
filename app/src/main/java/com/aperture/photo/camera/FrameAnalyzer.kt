@@ -8,11 +8,13 @@ class FrameAnalyzer(private val mirrored: Boolean, private val onScene: (Scene) 
     ImageAnalysis.Analyzer {
     private var lastFrame = 0L
     private val samples = IntArray(Size * Size)
+    private val detailTracker = DetailTracker()
 
     override fun analyze(image: ImageProxy) {
         try {
             val now = SystemClock.elapsedRealtime()
             if (now - lastFrame < 200) return
+            if (now - lastFrame > 800) detailTracker.update(null)
             lastFrame = now
             val crop = image.cropRect
             val plane = image.planes[0]
@@ -36,7 +38,8 @@ class FrameAnalyzer(private val mirrored: Boolean, private val onScene: (Scene) 
                     samples[y * Size + x] = buffer.get(offset).toInt() and 255
                 }
             }
-            onScene(Composition.measure(samples, Size, Size))
+            val scene = Composition.measure(samples, Size, Size)
+            onScene(scene.copy(focus = detailTracker.update(scene.focus)))
         } finally {
             image.close()
         }

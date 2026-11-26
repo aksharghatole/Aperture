@@ -1,6 +1,8 @@
 package com.aperture.photo
 
 import com.aperture.photo.camera.Composition
+import com.aperture.photo.camera.DetailTracker
+import com.aperture.photo.camera.ShootingMode
 import com.aperture.photo.camera.FocusRegion
 import com.aperture.photo.camera.Framing
 import com.aperture.photo.camera.Scene
@@ -46,6 +48,28 @@ class CompositionTest {
     @Test fun centerGuideGivesVerticalCueWhenDetailIsBelow() {
         val scene = Scene(100, 0f, 0f, FocusRegion(.5f, .8f))
         assertEquals("Aim a little lower", Composition.guidance(scene, null, Framing.CENTER))
+    }
+
+    @Test fun shootingModesUseDifferentMeasuredCues() {
+        val dim = Scene(62, .5f, 0f, FocusRegion(.5f, 1f / 3f))
+        assertEquals("Detail near the framing guide", Composition.guidance(dim, 0f, ShootingMode.PORTRAIT))
+        assertEquals("Low light · hold steady", Composition.guidance(dim, 0f, ShootingMode.NIGHT))
+        assertEquals("Rotate clockwise · 3°", Composition.guidance(dim, 3f, ShootingMode.ARCHITECTURE))
+        assertEquals("Camera level", Composition.guidance(dim, 0f, ShootingMode.LANDSCAPE))
+        assertEquals("Use the horizon guide",
+            Composition.guidance(null, null, ShootingMode.LANDSCAPE, analysisAvailable = false))
+    }
+
+    @Test fun trackerWithholdsSingleFramesAndDropsDisappearingOrMovingDetail() {
+        val tracker = DetailTracker()
+        val left = FocusRegion(.2f, .3f)
+        val right = FocusRegion(.8f, .3f)
+        assertNull(tracker.update(left))
+        assertEquals(left, tracker.update(left))
+        assertNull(tracker.update(right))
+        assertEquals(right, tracker.update(right))
+        assertNull(tracker.update(null))
+        assertNull(tracker.update(right))
     }
 
     @Test fun gravityRollPrefersCardinalOrientationsAndWithholdsNearFlatReading() {

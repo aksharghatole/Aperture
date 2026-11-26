@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0
+
+- Added seven shooting modes with framing, level, and lighting guidance.
+- Stabilized directional cues by requiring consecutive detail measurements.
+- Added a manual reference-photo overlay with adjustable opacity.
+
 ## 0.1.0
 
 - Added a native CameraX viewfinder with tap-to-focus, lens switching, JPEG capture, and camera capability handling.

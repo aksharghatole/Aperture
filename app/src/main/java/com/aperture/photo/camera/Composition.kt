@@ -6,7 +6,24 @@ import kotlin.math.roundToInt
 enum class Framing(val title: String, val anchorX: Float, val anchorY: Float) {
     THIRDS("Thirds", 1f / 3f, 1f / 3f),
     CENTER("Center", .5f, .5f),
-    HORIZON("Horizon", .5f, .5f)
+    HORIZON("Horizon", .5f, .5f),
+    UPPER_CENTER("Upper center", .5f, 1f / 3f)
+}
+
+enum class ShootingMode(
+    val title: String,
+    val framing: Framing,
+    val rollTolerance: Float = 4f,
+    val aimTolerance: Float = .14f,
+    val lowLightBrightness: Int = 52
+) {
+    PORTRAIT("Portrait", Framing.UPPER_CENTER, aimTolerance = .12f),
+    LANDSCAPE("Landscape", Framing.HORIZON, rollTolerance = 2.5f),
+    STREET("Street", Framing.THIRDS),
+    ARCHITECTURE("Architecture", Framing.CENTER, rollTolerance = 2f),
+    FOOD("Food", Framing.THIRDS, aimTolerance = .11f),
+    MACRO("Macro", Framing.CENTER, aimTolerance = .09f),
+    NIGHT("Night", Framing.CENTER, lowLightBrightness = 72)
 }
 
 data class FocusRegion(val x: Float, val y: Float)
@@ -71,18 +88,24 @@ object Composition {
         )
     }
 
-    fun guidance(scene: Scene?, roll: Float?, framing: Framing, analysisAvailable: Boolean = true): String {
-        if (roll != null && abs(roll) >= 4f) {
+    fun guidance(scene: Scene?, roll: Float?, mode: ShootingMode, analysisAvailable: Boolean = true): String =
+        guidance(scene, roll, mode.framing, analysisAvailable, mode.rollTolerance,
+            mode.aimTolerance, mode.lowLightBrightness)
+
+    fun guidance(
+        scene: Scene?, roll: Float?, framing: Framing, analysisAvailable: Boolean = true,
+        rollTolerance: Float = 4f, aimTolerance: Float = .14f, lowLightBrightness: Int = 52
+    ): String {
+        if (roll != null && abs(roll) >= rollTolerance) {
             val direction = if (roll > 0) "clockwise" else "counterclockwise"
             return "Rotate $direction · ${abs(roll).roundToInt()}°"
         }
         if (scene == null && analysisAvailable) return "Reading the viewfinder…"
-        if (scene == null) return if (framing == Framing.HORIZON && roll != null) {
-            "Camera level"
-        } else {
-            "Use the grid to frame your subject"
+        if (framing == Framing.HORIZON && scene == null) {
+            return if (roll == null) "Use the horizon guide" else "Camera level"
         }
-        if (scene.brightness < 52 && scene.shadowFraction > .45f) return "Low light · hold steady"
+        if (scene == null) return "Use the grid to frame your subject"
+        if (scene.brightness < lowLightBrightness && scene.shadowFraction > .45f) return "Low light · hold steady"
         if (scene.highlightFraction > .28f) return "Bright areas may lose detail"
         if (framing == Framing.HORIZON) {
             return if (roll == null) "Use the grid to judge the horizon" else "Camera level"
@@ -92,8 +115,8 @@ object Composition {
         val dx = focus.x - x
         val dy = focus.y - framing.anchorY
         return when {
-            abs(dx) > .14f && abs(dx) >= abs(dy) -> if (dx > 0) "Aim a little right" else "Aim a little left"
-            abs(dy) > .14f -> if (dy > 0) "Aim a little lower" else "Aim a little higher"
+            abs(dx) > aimTolerance && abs(dx) >= abs(dy) -> if (dx > 0) "Aim a little right" else "Aim a little left"
+            abs(dy) > aimTolerance -> if (dy > 0) "Aim a little lower" else "Aim a little higher"
             else -> "Detail near the framing guide"
         }
     }
