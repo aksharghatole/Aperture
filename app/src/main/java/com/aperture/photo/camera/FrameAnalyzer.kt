@@ -28,15 +28,19 @@ internal class FrameAnalyzer(
             }
             lastFrame = now
             previousMode = mode
-            val frame = LumaFrame(image)
-            if (!frame.isValid) {
+            val crop = image.cropRect
+            val plane = image.planes.firstOrNull()
+            val frame = plane?.let {
+                LumaFrame(it.buffer, image.width, image.height, it.rowStride, it.pixelStride,
+                    crop.left, crop.top, crop.right, crop.bottom, image.imageInfo.rotationDegrees)
+            }
+            if (frame == null || !frame.isValid) {
                 invalidate(mode)
                 return
             }
             for (y in 0 until Size) {
                 for (x in 0 until Size) {
-                    val column = if (mirrored) Size - 1 - x else x
-                    samples[y * Size + x] = frame.sample(column, y, Size, Size)
+                    samples[y * Size + x] = frame.sample(x, y, Size, Size, mirrored)
                 }
             }
             val scene = Composition.measure(samples, Size, Size)
@@ -59,29 +63,4 @@ internal class FrameAnalyzer(
     }
 
     private companion object { const val Size = 40 }
-}
-
-internal class LumaFrame(image: ImageProxy) {
-    private val crop = image.cropRect
-    private val plane = image.planes[0]
-    private val buffer = plane.buffer
-    private val start = buffer.position()
-    private val rotation = image.imageInfo.rotationDegrees
-    private val transposed = rotation == 90 || rotation == 270
-    val width = if (transposed) crop.height() else crop.width()
-    val height = if (transposed) crop.width() else crop.height()
-
-    val isValid = width > 0 && height > 0 && crop.left >= 0 && crop.top >= 0 &&
-        start + (crop.bottom - 1) * plane.rowStride + (crop.right - 1) * plane.pixelStride < buffer.limit()
-
-    fun sample(x: Int, y: Int, sampleWidth: Int, sampleHeight: Int): Int {
-        val u = (x + .5f) / sampleWidth
-        val v = (y + .5f) / sampleHeight
-        val sourceX = when (rotation) { 90 -> v; 180 -> 1f - u; 270 -> 1f - v; else -> u }
-        val sourceY = when (rotation) { 90 -> 1f - u; 180 -> 1f - v; 270 -> u; else -> v }
-        val row = crop.top + (sourceY * crop.height()).toInt()
-        val column = crop.left + (sourceX * crop.width()).toInt()
-        val offset = start + row * plane.rowStride + column * plane.pixelStride
-        return buffer.get(offset).toInt() and 255
-    }
 }
