@@ -32,6 +32,7 @@
 
 - Undo and redo for Darkroom edits, with an option to save and reopen each photo’s edit history.
 - Live luminance histogram for the edited preview.
+- Independent shadow and highlight controls for previews and exports.
 - Aspect-ratio crop presets with drag positioning and non-destructive export.
 - Batch export for selected photos using each saved Darkroom edit.
 

@@ -63,6 +63,9 @@ object PhotoRenderer {
         canvas.drawBitmap(source, transform, Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
             colorFilter = colorFilter(recipe)
         })
+        if (recipe.shadows != 0f || recipe.highlights != 0f) {
+            applyTones(output, ToneAdjustments(recipe.shadows, recipe.highlights))
+        }
         if (recipe.vignette > 0f) {
             val alpha = (recipe.vignette.coerceIn(0f, 1f) * 220).toInt()
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -76,5 +79,14 @@ object PhotoRenderer {
             canvas.drawRect(0f, 0f, 1f, 1f, paint)
         }
         return output
+    }
+
+    private fun applyTones(bitmap: Bitmap, tones: ToneAdjustments) {
+        val row = IntArray(bitmap.width)
+        for (y in 0 until bitmap.height) {
+            bitmap.getPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
+            for (x in row.indices) row[x] = tones.apply(row[x])
+            bitmap.setPixels(row, 0, bitmap.width, 0, y, bitmap.width, 1)
+        }
     }
 }
