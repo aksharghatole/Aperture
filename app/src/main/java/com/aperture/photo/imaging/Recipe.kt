@@ -22,5 +22,6 @@ data class Recipe(
     val saturation: Float = 0f,
     val warmth: Float = 0f,
     val vignette: Float = film.vignette,
-    val quarterTurns: Int = 0
+    val quarterTurns: Int = 0,
+    val crop: CropWindow = CropWindow.Full
 )

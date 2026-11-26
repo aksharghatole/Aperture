@@ -32,7 +32,8 @@
 
 - Undo and redo for Darkroom edits, with an option to save and reopen each photo’s edit history.
 - Live luminance histogram for the edited preview.
+- Aspect-ratio crop presets with drag positioning and non-destructive export.
 
-- Add batch export, crop and perspective, RGB curves, HSL, and color grading.
+- Add batch export, perspective, RGB curves, HSL, and color grading.
 - Add local adjustment masks, sharpening, and noise reduction. Explore Camera2 RAW capability and DNG decode and export on supported hardware.
 - Profile GPU processing, full-resolution memory use, and compatibility on Android 10+ devices.

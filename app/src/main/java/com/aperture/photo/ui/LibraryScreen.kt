@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.PhotoRenderer
@@ -138,6 +139,14 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
         }
     }
     BackHandler(enabled = saving) {}
+    var cropping by remember { mutableStateOf(false) }
+    if (cropping) {
+        val fullPreview by renderedPhoto(source, recipe.copy(crop = CropWindow.Full))
+        EditorCrop(fullPreview, recipe.crop, { cropping = false }) { crop ->
+            commit(recipe.copy(crop = crop))
+            cropping = false
+        }
+    }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         ScreenHeader("Darkroom", "Library", { if (!saving) back() }) {
@@ -221,13 +230,16 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit) {
                 TextButton(enabled = preview != null, onClick = { showHistogram = !showHistogram }) {
                     Text(if (showHistogram) "Hide histogram" else "Histogram")
                 }
+                TextButton(enabled = source != null && draft == null, onClick = { cropping = true }) { Text("Crop") }
                 TextButton(enabled = history.canUndo && draft == null, onClick = { history = history.undo() }) {
                     Text("Undo")
                 }
                 TextButton(enabled = history.canRedo && draft == null, onClick = { history = history.redo() }) {
                     Text("Redo")
                 }
-                TextButton(onClick = { commit(recipe.copy(quarterTurns = (recipe.quarterTurns + 1) % 4)) }) { Text("Rotate") }
+                TextButton(onClick = {
+                    commit(recipe.copy(quarterTurns = (recipe.quarterTurns + 1) % 4, crop = recipe.crop.rotateClockwise()))
+                }) { Text("Rotate") }
                 TextButton(onClick = { commit(original) }) { Text("Reset") }
                 result?.let { uri ->
                     TextButton(onClick = {

@@ -51,8 +51,10 @@ object PhotoRenderer {
         val sideways = turns % 2 != 0
         val width = if (sideways) source.height else source.width
         val height = if (sideways) source.width else source.height
-        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val crop = recipe.crop.pixels(width, height)
+        val output = Bitmap.createBitmap(crop.width, crop.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
+        canvas.translate(-crop.left.toFloat(), -crop.top.toFloat())
         val transform = Matrix().apply {
             postTranslate(-source.width / 2f, -source.height / 2f)
             postRotate(turns * 90f)
