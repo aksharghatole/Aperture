@@ -20,6 +20,54 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class PhotoWorkflowTest {
+    @Test fun deletingPhotoWithoutSavedEditsRemovesOriginal() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val library = PhotoLibrary(context)
+        val pending = library.beginCapture()
+        val source = Bitmap.createBitmap(32, 24, Bitmap.Config.ARGB_8888)
+        source.eraseColor(Color.BLUE)
+        try {
+            pending.outputStream().use { assertTrue(source.compress(Bitmap.CompressFormat.JPEG, 100, it)) }
+        } finally {
+            source.recycle()
+        }
+        val photo = library.commitCapture(pending, Film.CLEAN)
+        try {
+            library.delete(photo)
+            assertTrue(!photo.file.exists())
+            assertTrue(!File(photo.file.parentFile, "${photo.file.name}.edits").exists())
+            assertTrue(!library.all().contains(photo))
+        } finally {
+            photo.file.delete()
+            File(photo.file.parentFile, "${photo.file.name}.edits").delete()
+        }
+    }
+
+    @Test fun deletingPhotoWithSavedEditsRemovesOriginalAndHistory() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val library = PhotoLibrary(context)
+        val pending = library.beginCapture()
+        val source = Bitmap.createBitmap(32, 24, Bitmap.Config.ARGB_8888)
+        source.eraseColor(Color.RED)
+        try {
+            pending.outputStream().use { assertTrue(source.compress(Bitmap.CompressFormat.JPEG, 100, it)) }
+        } finally {
+            source.recycle()
+        }
+        val photo = library.commitCapture(pending, Film.CLEAN)
+        try {
+            library.saveEdits(photo, EditHistory(Recipe(photo.film)))
+            assertTrue(File(photo.file.parentFile, "${photo.file.name}.edits").exists())
+            library.delete(photo)
+            assertTrue(!photo.file.exists())
+            assertTrue(!File(photo.file.parentFile, "${photo.file.name}.edits").exists())
+            assertTrue(!library.all().contains(photo))
+        } finally {
+            photo.file.delete()
+            File(photo.file.parentFile, "${photo.file.name}.edits").delete()
+        }
+    }
+
     @Test fun originalSurvivesSavedEditsAndFullResolutionExport() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val library = PhotoLibrary(context)
