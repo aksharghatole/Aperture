@@ -14,10 +14,13 @@ import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.imaging.ToneCurve
 import com.aperture.photo.library.PhotoLibrary
 import com.aperture.photo.library.RecoveryPolicy
+import com.aperture.photo.library.SavedEditException
+import com.aperture.photo.library.SavedEditProblem
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -52,6 +55,40 @@ class PhotoWorkflowTest {
             orphan.delete()
             library.discardCapture(active)
             library.delete(original)
+        }
+    }
+
+    @Test fun invalidEditFilesArePreservedUntilExplicitReplacement() {
+        val library = PhotoLibrary(InstrumentationRegistry.getInstrumentation().targetContext)
+        val pending = library.beginCapture().apply { writeText("original") }
+        val photo = library.commitCapture(pending, Film.CLEAN)
+        val sidecar = File(photo.file.parentFile, "${photo.file.name}.edits")
+        val replacement = EditHistory(Recipe(exposure = .5f))
+        try {
+            for ((encoded, expected) in listOf(
+                "4,0\nCLEAN,0.0" to SavedEditProblem.CORRUPT,
+                "99,0\nfuture-format" to SavedEditProblem.UNSUPPORTED
+            )) {
+                sidecar.writeText(encoded)
+                assertEquals(expected, assertThrows(SavedEditException::class.java) { library.loadEdits(photo) }.problem)
+                assertThrows(SavedEditException::class.java) { library.exportSavedEdits(photo) }
+                assertThrows(SavedEditException::class.java) { library.saveEdits(photo, replacement) }
+                assertEquals(encoded, sidecar.readText())
+                library.saveEdits(photo, replacement, expected)
+                assertEquals(replacement.current, library.loadEdits(photo)?.current)
+            }
+            assertTrue(sidecar.delete())
+            assertTrue(sidecar.mkdir())
+            assertEquals(SavedEditProblem.UNREADABLE,
+                assertThrows(SavedEditException::class.java) { library.loadEdits(photo) }.problem)
+            assertThrows(SavedEditException::class.java) {
+                library.saveEdits(photo, replacement, SavedEditProblem.UNREADABLE)
+            }
+            assertTrue(sidecar.isDirectory)
+            assertEquals("original", photo.file.readText())
+        } finally {
+            sidecar.delete()
+            library.delete(photo)
         }
     }
 
@@ -138,12 +175,24 @@ class PhotoWorkflowTest {
         try {
             assertTrue(library.all().contains(photo))
             assertNull(library.loadEdits(photo))
+            val originalThumbnail = library.thumbnail(photo)
+            try {
+                assertTrue(originalThumbnail.width > originalThumbnail.height)
+            } finally {
+                originalThumbnail.recycle()
+            }
             val initial = Recipe(photo.film)
             val rotated = initial.copy(quarterTurns = 1, crop = CropWindow(.25f, .125f, .75f, .875f))
             val adjusted = rotated.copy(exposure = .5f)
             library.saveEdits(photo, EditHistory(initial).commit(rotated).commit(adjusted).undo())
             val reloaded = checkNotNull(PhotoLibrary(context).loadEdits(photo))
             assertEquals(rotated, reloaded.current)
+            val editedThumbnail = library.thumbnail(photo)
+            try {
+                assertTrue(editedThumbnail.height > editedThumbnail.width)
+            } finally {
+                editedThumbnail.recycle()
+            }
             assertEquals(initial, reloaded.undo().current)
             assertEquals(adjusted, reloaded.redo().current)
             assertEquals(listOf(photo), library.all().filter { it.file.name.startsWith(photo.file.name) })
@@ -160,6 +209,14 @@ class PhotoWorkflowTest {
                     } finally {
                         output.recycle()
                     }
+                }
+                val sidecar = File(photo.file.parentFile, "${photo.file.name}.edits")
+                sidecar.writeText("invalid")
+                val fallback = library.thumbnail(photo)
+                try {
+                    assertTrue(fallback.width > fallback.height)
+                } finally {
+                    fallback.recycle()
                 }
                 assertArrayEquals(bytes, photo.file.readBytes())
             } finally {

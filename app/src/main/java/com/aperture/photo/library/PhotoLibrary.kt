@@ -3,6 +3,7 @@ package com.aperture.photo.library
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
 import android.os.Build
@@ -19,6 +20,11 @@ import java.io.IOException
 import java.util.UUID
 
 data class Photo(val file: File, val film: Film)
+
+internal enum class SavedEditProblem { CORRUPT, UNSUPPORTED, UNREADABLE }
+
+internal class SavedEditException(val problem: SavedEditProblem, cause: IOException? = null) :
+    IOException("Saved edits: $problem", cause)
 
 class PhotoLibrary(private val context: Context) {
     private val directory = File(context.filesDir, "photos").apply { mkdirs() }
@@ -129,25 +135,40 @@ class PhotoLibrary(private val context: Context) {
         val input = try {
             file.openRead()
         } catch (failure: FileNotFoundException) {
-            if (!file.baseFile.exists()) return@synchronized null
-            throw failure
+            if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return@synchronized null
+            throw SavedEditException(SavedEditProblem.UNREADABLE, failure)
+        } catch (failure: IOException) {
+            throw SavedEditException(SavedEditProblem.UNREADABLE, failure)
         }
-        val bytes = input.use { stream ->
-            val buffer = ByteArray(EditHistoryCodec.MaxEncodedSize + 1)
-            var size = 0
-            while (size < buffer.size) {
-                val count = stream.read(buffer, size, buffer.size - size)
-                if (count < 0) break
-                size += count
+        val bytes = try {
+            input.use { stream ->
+                val buffer = ByteArray(EditHistoryCodec.MaxEncodedSize + 1)
+                var size = 0
+                while (size < buffer.size) {
+                    val count = stream.read(buffer, size, buffer.size - size)
+                    if (count < 0) break
+                    size += count
+                }
+                buffer.copyOf(size)
             }
-            buffer.copyOf(size)
+        } catch (failure: IOException) {
+            throw SavedEditException(SavedEditProblem.UNREADABLE, failure)
         }
-        if (bytes.size > EditHistoryCodec.MaxEncodedSize) throw IOException("Edit history is too large")
-        EditHistoryCodec.decode(bytes.toString(Charsets.UTF_8)) ?: throw IOException("Invalid edit history")
+        val encoded = bytes.toString(Charsets.UTF_8)
+        if (EditHistoryCodec.isUnsupportedVersion(encoded)) throw SavedEditException(SavedEditProblem.UNSUPPORTED)
+        if (bytes.size > EditHistoryCodec.MaxEncodedSize) throw SavedEditException(SavedEditProblem.CORRUPT)
+        EditHistoryCodec.decode(encoded) ?: throw SavedEditException(SavedEditProblem.CORRUPT)
     }
 
-    internal fun saveEdits(photo: Photo, history: EditHistory) = synchronized(editFileLock) {
+    internal fun saveEdits(
+        photo: Photo, history: EditHistory, replaceProblem: SavedEditProblem? = null
+    ) = synchronized(editFileLock) {
         val file = editFile(photo)
+        try {
+            loadEdits(photo)
+        } catch (failure: SavedEditException) {
+            if (failure.problem != replaceProblem || failure.problem == SavedEditProblem.UNREADABLE) throw failure
+        }
         val output = file.startWrite()
         try {
             output.write(EditHistoryCodec.encode(history).toByteArray(Charsets.UTF_8))
@@ -175,6 +196,20 @@ class PhotoLibrary(private val context: Context) {
         val activeCaptures = mutableSetOf<String>()
         val activeExports = mutableSetOf<String>()
         val editFileLock = Any()
+    }
+
+    internal fun thumbnail(photo: Photo): Bitmap {
+        val recipe = try {
+            loadEdits(photo)?.current
+        } catch (_: IOException) {
+            null
+        } ?: Recipe(photo.film)
+        val source = PhotoRenderer.decode(photo.file, 320)
+        return try {
+            PhotoRenderer.render(source, recipe)
+        } finally {
+            source.recycle()
+        }
     }
 
     fun exportSavedEdits(photo: Photo): Uri =

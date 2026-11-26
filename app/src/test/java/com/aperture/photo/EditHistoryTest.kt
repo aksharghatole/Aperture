@@ -8,6 +8,19 @@ import org.junit.Test
 class EditHistoryTest {
     private val original = Recipe()
 
+    @Test fun dirtyStateComparesTheWholeTimelineAndAnyLiveDraft() {
+        val original = EditHistory(Recipe())
+        val adjusted = original.current.copy(exposure = .5f)
+        val edited = original.commit(adjusted)
+        assertFalse(original.differsFrom(EditHistory(Recipe())))
+        assertTrue(original.differsFrom(original, adjusted))
+        assertFalse(original.differsFrom(original, original.current))
+        assertTrue(edited.differsFrom(original))
+        assertTrue(edited.undo().differsFrom(original))
+        assertFalse(edited.differsFrom(EditHistory.restore(edited.snapshots, edited.cursor)!!))
+        assertTrue(edited.commit(adjusted.copy(warmth = .5f)).differsFrom(edited))
+    }
+
     @Test fun replaysEditsAndCanUndoReset() {
         val exposure = original.copy(exposure = .5f)
         val rotated = exposure.copy(quarterTurns = 1)
