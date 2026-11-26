@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,7 +49,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
     var importing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selecting by rememberSaveable { mutableStateOf(false) }
-    var selected by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+    var selected by rememberSaveable(stateSaver = SelectionSaver) { mutableStateOf(emptyList<String>()) }
     var batchProgress by remember { mutableStateOf<BatchProgress?>(null) }
     var stopBatch by remember { mutableStateOf(false) }
     var batchMessage by remember { mutableStateOf<String?>(null) }
@@ -56,7 +57,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
     val progress = batchProgress
 
     fun cancelSelection() {
-        selected = arrayListOf()
+        selected = emptyList()
         selecting = false
     }
 
@@ -80,7 +81,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                     try {
                         withContext(Dispatchers.IO) { library.exportSavedEdits(photo) }
                         exported++
-                        selected = ArrayList(selected - photo.file.name)
+                        selected = selected - photo.file.name
                     } catch (failure: CancellationException) {
                         throw failure
                     } catch (_: Exception) {
@@ -91,7 +92,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                     attempted++
                     batchProgress = BatchProgress(attempted, batch.size)
                 }
-                selected = ArrayList(failures + batch.drop(attempted).map { it.file.name })
+                selected = failures + batch.drop(attempted).map { it.file.name }
                 if (selected.isEmpty()) selecting = false
                 batchMessage = buildString {
                     append("Exported ").append(exported).append(" of ").append(batch.size)
@@ -172,7 +173,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                     val tile = Modifier.aspectRatio(1f).clip(RoundedCornerShape(12.dp))
                     val interaction = if (selecting) {
                         tile.toggleable(value = checked, enabled = progress == null) {
-                            selected = ArrayList(if (it) selected + name else selected - name)
+                            selected = if (it) selected + name else selected - name
                         }
                     } else {
                         tile.clickable(onClickLabel = "Edit photo") { open(photo) }
@@ -198,6 +199,8 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
 }
 
 private data class BatchProgress(val completed: Int, val total: Int)
+
+private val SelectionSaver = listSaver<List<String>, String>(save = { it }, restore = { it })
 
 @Composable
 fun PhotoThumbnail(photo: Photo, modifier: Modifier, description: String) {
