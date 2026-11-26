@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.sp
 import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
+import com.aperture.photo.imaging.ExportReceipt
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
@@ -223,6 +224,11 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
         mutableStateOf(EditHistory(original))
     }
     var editsLoaded by rememberSaveable(photo.file.name) { mutableStateOf(false) }
+    var lastSaved by rememberSaveable(photo.file.name, stateSaver = EditHistorySaver) {
+        mutableStateOf(EditHistory(original))
+    }
+    var savedByUser by rememberSaveable(photo.file.name) { mutableStateOf(false) }
+    var confirmLeave by rememberSaveable(photo.file.name) { mutableStateOf(false) }
     var savedEditProblem by rememberSaveable(photo.file.name) { mutableStateOf<SavedEditProblem?>(null) }
     var confirmReplacement by remember { mutableStateOf(false) }
     var saving by remember(photo) { mutableStateOf(false) }
@@ -239,7 +245,9 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     val rendered by renderedPhoto(source, previewRecipe)
     val preview = rendered?.getOrNull()
     var showHistogram by rememberSaveable { mutableStateOf(false) }
-    var result by remember { mutableStateOf<android.net.Uri?>(null) }
+    var result by remember(photo) { mutableStateOf<ExportReceipt<android.net.Uri>?>(null) }
+    val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
+    val shareUri = result?.matching(exportRecipe)
     var exporting by remember { mutableStateOf(false) }
     var deleting by remember(photo) { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -248,7 +256,10 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     LaunchedEffect(photo.file.name, library, editsLoaded) {
         if (!editsLoaded) {
             try {
-                withContext(Dispatchers.IO) { library.loadEdits(photo) }?.let { history = it }
+                withContext(Dispatchers.IO) { library.loadEdits(photo) }?.let {
+                    history = it
+                    lastSaved = it
+                }
                 savedEditProblem = null
             } catch (failure: CancellationException) {
                 throw failure
@@ -260,14 +271,27 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
             editsLoaded = true
         }
     }
-    fun save(replace: SavedEditProblem? = null) {
-        val snapshot = history
+    fun requestBack() {
+        if (saving || deleting || exporting) return
+        if (history.differsFrom(lastSaved, draft)) confirmLeave = true else back()
+    }
+
+    fun save(replace: SavedEditProblem? = null, leave: Boolean = false) {
+        val snapshot = draft?.let(history::commit) ?: history
+        if (leave) {
+            history = snapshot
+            draft = null
+        }
         saving = true
+        message = "Saving edits…"
         scope.launch {
             try {
                 withContext(Dispatchers.IO) { library.saveEdits(photo, snapshot, replace) }
                 savedEditProblem = null
-                message = "Edits saved"
+                lastSaved = snapshot
+                savedByUser = true
+                message = null
+                if (leave && !history.differsFrom(snapshot, draft)) back()
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: SavedEditException) {
@@ -279,6 +303,26 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                 saving = false
             }
         }
+    }
+
+    if (confirmLeave) {
+        AlertDialog(
+            onDismissRequest = { confirmLeave = false },
+            title = { Text("Unsaved edits") },
+            text = { Text("Save this photo’s edit history before leaving Darkroom?") },
+            confirmButton = {
+                TextButton(enabled = savedEditProblem == null, onClick = {
+                    confirmLeave = false
+                    save(leave = true)
+                }) { Text("Save and leave") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { confirmLeave = false }) { Text("Stay") }
+                    TextButton(onClick = { confirmLeave = false; back() }) { Text("Discard") }
+                }
+            }
+        )
     }
 
     if (confirmReplacement) {
@@ -296,7 +340,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
         )
     }
 
-    BackHandler(enabled = saving || deleting) {}
+    BackHandler(onBack = ::requestBack)
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { if (!deleting) confirmDelete = false },
@@ -342,20 +386,21 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        ScreenHeader("Darkroom", "Library", { if (!saving && !deleting) back() }) {
+        ScreenHeader("Darkroom", "Library", ::requestBack) {
             Row {
                 TextButton(enabled = !saving && !exporting && !deleting, onClick = { confirmDelete = true }) {
                     Text("Delete")
                 }
                 TextButton(enabled = editsLoaded && source != null && !exporting && !saving && !deleting, onClick = {
-                    val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
+                    val snapshot = exportRecipe
                     scope.launch {
                         exporting = true
                         result = null
                         message = "Exporting full resolution…"
                         try {
-                            result = withContext(Dispatchers.IO) { library.export(photo, exportRecipe) }
-                            message = "Saved in Pictures/Aperture"
+                            val uri = withContext(Dispatchers.IO) { library.export(photo, snapshot) }
+                            result = ExportReceipt(snapshot, uri)
+                            message = null
                         } catch (failure: CancellationException) {
                             throw failure
                         } catch (_: Exception) {
@@ -441,7 +486,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                     commit(recipe.copy(quarterTurns = (recipe.quarterTurns + 1) % 4, crop = recipe.crop.rotateClockwise()))
                 }) { Text("Rotate") }
                 TextButton(onClick = { commit(original) }) { Text("Reset") }
-                result?.let { uri ->
+                shareUri?.let { uri ->
                     TextButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "image/jpeg"
@@ -452,10 +497,15 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                     }) { Text("Share") }
                 }
             }
-            message?.let {
-                Text(it, modifier = Modifier.padding(bottom = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 12.sp)
-            }
+        }
+        val completion = when {
+            shareUri != null -> "Saved in Pictures/Aperture"
+            savedByUser && !history.differsFrom(lastSaved, draft) -> "Edits saved"
+            else -> null
+        }
+        (message ?: completion)?.let {
+            Text(it, modifier = Modifier.padding(bottom = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp)
         }
     }
 }

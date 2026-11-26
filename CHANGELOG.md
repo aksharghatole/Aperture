@@ -9,6 +9,7 @@
 - Added a live Darkroom luminance histogram with near-black and near-white percentages.
 - Added a Save edits action that restores a photo’s undo and redo history when reopened.
 - Preserve unreadable Darkroom edit files and offer original export or confirmed replacement.
+- Prompt before leaving unsaved Darkroom edits and associate save and share status with the edits that were actually saved or exported.
 - Added Darkroom undo and redo for film selection, adjustments, rotation, and reset. A slider gesture creates one history step.
 
 ## 0.3.0
