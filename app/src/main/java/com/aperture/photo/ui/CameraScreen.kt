@@ -9,6 +9,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -56,6 +57,8 @@ import com.aperture.photo.camera.CameraSession
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.Framing
 import com.aperture.photo.camera.Scene
+import com.aperture.photo.camera.SceneReading
+import kotlinx.coroutines.delay
 import com.aperture.photo.camera.ShootingMode
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.library.Photo
@@ -74,16 +77,22 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
     var film by rememberSaveable { mutableStateOf(Film.CLEAN) }
     var mode by rememberSaveable { mutableStateOf(ShootingMode.STREET) }
     val reference = rememberCameraReference()
-    var scene by remember { mutableStateOf<Scene?>(null) }
+    var reading by remember { mutableStateOf<SceneReading?>(null) }
+    val scene = reading?.scene
     var ready by remember { mutableStateOf(false) }
     var canFlip by remember { mutableStateOf(false) }
-    var hasAnalysis by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var captureMessage by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
     var session by remember { mutableStateOf<CameraSession?>(null) }
     val roll = if (granted) deviceRoll() else null
+
+    LaunchedEffect(reading) {
+        val accepted = reading ?: return@LaunchedEffect
+        delay(accepted.remainingMillis(SystemClock.elapsedRealtime()))
+        if (reading === accepted) reading = null
+    }
 
     DisposableEffect(owner, context) {
         val observer = LifecycleEventObserver { _, event ->
@@ -105,15 +114,19 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                     }
                     AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
                     DisposableEffect(preview, owner) {
-                        val connection = CameraSession(preview, owner, { scene = it },
-                            { active, flip, analysis ->
+                        val connection = CameraSession(preview, owner, { next ->
+                            reading = if (ready) SceneReading.accept(next, SystemClock.elapsedRealtime()) else null
+                        }, { active, flip, _ ->
                                 ready = active
                                 canFlip = flip
-                                hasAnalysis = analysis
-                                if (!active) scene = null
+                                if (!active) reading = null
                             }, { error = it })
                         session = connection
-                        onDispose { connection.close(); session = null }
+                        onDispose {
+                            connection.close()
+                            reading = null
+                            session = null
+                        }
                     }
                     SideEffect {
                         session?.let { connection ->
@@ -138,7 +151,7 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                     })
                     Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
-                        val hint = captureMessage ?: Composition.guidance(scene, roll, mode, hasAnalysis)
+                        val hint = captureMessage ?: Composition.guidance(scene, roll, mode, analysisAvailable = false)
                         Text(hint, color = Color.White, fontSize = 13.sp,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .75f))
                                 .padding(horizontal = 14.dp, vertical = 8.dp))
@@ -172,7 +185,7 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ShootingMode.entries.forEach { item ->
                     FilterChip(selected = item == mode, onClick = {
-                        if (mode != item) scene = null
+                        if (mode != item) reading = null
                         mode = item
                         session?.shootingMode = item
                         captureMessage = null

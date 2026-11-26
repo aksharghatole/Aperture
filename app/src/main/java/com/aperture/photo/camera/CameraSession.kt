@@ -22,10 +22,10 @@ import com.aperture.photo.imaging.Recipe
 import java.io.File
 import java.util.concurrent.Executors
 
-class CameraSession(
+internal class CameraSession(
     private val view: PreviewView,
     private val owner: LifecycleOwner,
-    private val onScene: (Scene) -> Unit,
+    private val onScene: (SceneReading?) -> Unit,
     private val onReady: (ready: Boolean, canFlip: Boolean, hasAnalysis: Boolean) -> Unit,
     private val onError: (String) -> Unit
 ) {
