@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added an optional RGB channel histogram with per-channel near-black and near-white estimates and accessible text summaries.
 - Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
 - Added persistent camera guide choices for automatic, thirds, center, diagonal, golden-ratio, and off overlays.
 - Added an opt-in volume-key shutter shortcut, disabled by default and active only while the camera can capture.
