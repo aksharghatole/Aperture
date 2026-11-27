@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added pinch-to-zoom and accessible zoom presets limited to each camera's observed range.
 - Added an optional RGB channel histogram with per-channel near-black and near-white estimates and accessible text summaries.
 - Added import-date and EXIF capture-date sorting options to the library.
 - Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
