@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aperture.photo.camera.CameraSession
 import com.aperture.photo.camera.CameraZoom
 import com.aperture.photo.camera.ExposureCompensation
+import com.aperture.photo.camera.FocusFeedback
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.CompositionGuide
 import com.aperture.photo.camera.CompositionGuideGeometry
@@ -113,6 +114,7 @@ internal fun CameraScreen(
     var exposure by remember { mutableStateOf<ExposureCompensation?>(null) }
     var exposureError by remember { mutableStateOf(false) }
     var exposureRequestId by remember { mutableIntStateOf(0) }
+    var focusFeedback by remember { mutableStateOf<FocusFeedback?>(null) }
     var analysisAvailable by remember { mutableStateOf(false) }
     var diagnosticsEnabled by remember {
         mutableStateOf(cameraPreferences.getBoolean("exposure_diagnostics_enabled", false))
@@ -135,6 +137,12 @@ internal fun CameraScreen(
         val accepted = reading ?: return@LaunchedEffect
         delay(accepted.remainingMillis(SystemClock.elapsedRealtime()))
         if (reading === accepted) reading = null
+    }
+
+    LaunchedEffect(focusFeedback) {
+        val accepted = focusFeedback ?: return@LaunchedEffect
+        delay(1_800)
+        if (focusFeedback == accepted) focusFeedback = null
     }
 
     DisposableEffect(owner, context) {
@@ -164,7 +172,7 @@ internal fun CameraScreen(
                                 canFlip = flip
                                 analysisAvailable = hasAnalysis
                                 if (!active) reading = null
-                        }, { zoom = it }, { exposure = it }, { error = it })
+                        }, { zoom = it }, { exposure = it }, { focusFeedback = it }, { error = it })
                         session = connection
                         onDispose {
                             connection.close()
@@ -197,8 +205,11 @@ internal fun CameraScreen(
                             }
                         }
                         .pointerInput(session) {
-                            detectTapGestures { session?.focus(it.x, it.y) }
+                            detectTapGestures { tap ->
+                                session?.focus(tap.x / size.width, tap.y / size.height)
+                            }
                         })
+                    focusFeedback?.let { TapFocusOverlay(it, Modifier.matchParentSize()) }
                     if (diagnosticsEnabled && analysisAvailable) {
                         ExposureDiagnosticsOverlay(scene?.exposureDiagnostics,
                             Modifier.align(Alignment.TopEnd).padding(10.dp))

@@ -33,6 +33,7 @@ internal class CameraSession(
     private val onReady: (ready: Boolean, canFlip: Boolean, hasAnalysis: Boolean) -> Unit,
     private val onZoom: (CameraZoom) -> Unit,
     private val onExposure: (ExposureCompensation?) -> Unit,
+    private val onFocus: (FocusFeedback?) -> Unit,
     private val onError: (String) -> Unit
 ) {
     private val main = ContextCompat.getMainExecutor(view.context)
@@ -53,6 +54,7 @@ internal class CameraSession(
     private var zoomObserver: Observer<ZoomState>? = null
     private var resetExposureOnBind = false
     private var exposureRequestGeneration = 0
+    private val focusFeedback = FocusFeedbackTracker()
     private var preview: Preview? = null
     private var capture: ImageCapture? = null
     private var analysis: ImageAnalysis? = null
@@ -210,8 +212,40 @@ internal class CameraSession(
     }
 
     fun focus(x: Float, y: Float) {
-        val point = view.meteringPointFactory.createPoint(x, y)
-        camera?.cameraControl?.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
+        if (closed) return
+        val current = camera
+        if (current == null || view.width <= 0 || view.height <= 0) {
+            focusFeedback.clear()
+            onFocus(null)
+            return
+        }
+        val targetX = x.coerceIn(0f, 1f)
+        val targetY = y.coerceIn(0f, 1f)
+        val point = view.meteringPointFactory.createPoint(targetX * view.width, targetY * view.height)
+        val afAction = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF).build()
+        val aeAction = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AE).build()
+        val autofocusSupported = runCatching {
+            current.cameraInfo.isFocusMeteringSupported(afAction)
+        }.getOrDefault(false)
+        val exposureMeteringSupported = runCatching {
+            current.cameraInfo.isFocusMeteringSupported(aeAction)
+        }.getOrDefault(false)
+        val requested = focusFeedback.request(targetX, targetY, autofocusSupported, exposureMeteringSupported)
+        onFocus(requested)
+        if (!autofocusSupported && !exposureMeteringSupported) return
+        try {
+            val action = if (autofocusSupported) afAction else aeAction
+            val future = current.cameraControl.startFocusAndMetering(action)
+            future.addListener({
+                val result = runCatching {
+                    val meteringResult = future.get()
+                    if (autofocusSupported) meteringResult.isFocusSuccessful else true
+                }.getOrDefault(false)
+                focusFeedback.complete(requested.requestId, result)?.let(onFocus)
+            }, main)
+        } catch (_: Exception) {
+            focusFeedback.complete(requested.requestId, false)?.let(onFocus)
+        }
     }
 
     fun setFilm(value: Film) {
@@ -257,6 +291,8 @@ internal class CameraSession(
     }
 
     private fun unbind() {
+        focusFeedback.clear()
+        onFocus(null)
         exposureRequestGeneration++
         camera?.cameraInfo?.zoomState?.let { state -> zoomObserver?.let(state::removeObserver) }
         zoomObserver = null
