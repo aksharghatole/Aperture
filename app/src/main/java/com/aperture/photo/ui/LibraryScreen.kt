@@ -34,8 +34,6 @@ import androidx.compose.ui.unit.sp
 import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
-import com.aperture.photo.imaging.ExportReceipt
-import com.aperture.photo.imaging.ExportMemoryException
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
@@ -51,72 +49,41 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 @Composable
-fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, open: (Photo) -> Unit) {
+internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, back: () -> Unit, open: (Photo) -> Unit) {
+    val library = operations.library
     val scope = rememberCoroutineScope()
     var importing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable(stateSaver = SelectionSaver) { mutableStateOf(emptyList<String>()) }
-    var batchProgress by remember { mutableStateOf<BatchProgress?>(null) }
-    var stopBatch by remember { mutableStateOf(false) }
-    var batchMessage by remember { mutableStateOf<String?>(null) }
-    val pending = if (selecting) photos.filter { it.file.name in selected } else emptyList()
-    val progress = batchProgress
+    var batchMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val progress = operations.batchProgress
+    val selectMode = selecting || progress != null
+    val pending = if (selectMode) photos.filter { it.file.name in selected } else emptyList()
+    val stopBatch = progress?.stopping == true
 
     fun cancelSelection() {
         selected = emptyList()
         selecting = false
     }
 
-    BackHandler(enabled = selecting) {
-        if (batchProgress == null) cancelSelection() else stopBatch = true
+    BackHandler(enabled = selectMode) {
+        if (operations.batchProgress == null) cancelSelection() else operations.stopBatch()
+    }
+
+    LaunchedEffect(operations.batchResult) {
+        operations.batchResult?.let {
+            selected = it.remaining
+            selecting = selected.isNotEmpty()
+            batchMessage = it.message
+            operations.consumeBatchResult()
+        }
     }
 
     fun exportSelected() {
-        if (pending.isEmpty() || batchProgress != null) return
-        val batch = pending
-        stopBatch = false
+        if (pending.isEmpty() || progress != null) return
         batchMessage = null
-        batchProgress = BatchProgress(0, batch.size)
-        scope.launch {
-            val failures = arrayListOf<String>()
-            var exported = 0
-            var attempted = 0
-            var memoryFailures = 0
-            try {
-                for (photo in batch) {
-                    if (stopBatch) break
-                    try {
-                        withContext(Dispatchers.IO) { library.exportSavedEdits(photo) }
-                        exported++
-                        selected = selected - photo.file.name
-                    } catch (failure: CancellationException) {
-                        throw failure
-                    } catch (_: ExportMemoryException) {
-                        memoryFailures++
-                        failures.add(photo.file.name)
-                    } catch (_: Exception) {
-                        failures.add(photo.file.name)
-                    } catch (_: OutOfMemoryError) {
-                        memoryFailures++
-                        failures.add(photo.file.name)
-                    }
-                    attempted++
-                    batchProgress = BatchProgress(attempted, batch.size)
-                }
-                selected = failures + batch.drop(attempted).map { it.file.name }
-                if (selected.isEmpty()) selecting = false
-                batchMessage = buildString {
-                    append("Exported ").append(exported).append(" of ").append(batch.size)
-                    if (failures.isNotEmpty()) append(" · ").append(failures.size).append(" failed")
-                    if (memoryFailures > 0) append(" · Use Darkroom for smaller exports")
-                    if (attempted < batch.size) append(" · ").append(batch.size - attempted).append(" stopped before export")
-                    if (exported > 0) append(" · Pictures/Aperture")
-                }
-            } finally {
-                batchProgress = null
-            }
-        }
+        operations.exportBatch(pending)
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -139,12 +106,12 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
-        ScreenHeader(if (selecting) "${progress?.total ?: pending.size} selected" else "Library",
-            if (selecting) "Done" else "Camera", {
-                if (!selecting) back()
-                else if (batchProgress == null) cancelSelection()
+        ScreenHeader(if (selectMode) "${progress?.total ?: pending.size} selected" else "Library",
+            if (selectMode) "Done" else "Camera", {
+                if (!selectMode) back()
+                else if (progress == null) cancelSelection()
             }) {
-            if (!selecting) {
+            if (!selectMode) {
                 Row {
                     TextButton(enabled = !importing && photos.isNotEmpty(), onClick = {
                         selecting = true
@@ -155,7 +122,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
             } else if (progress == null) {
                 TextButton(enabled = pending.isNotEmpty(), onClick = ::exportSelected) { Text("Export") }
             } else {
-                TextButton(enabled = !stopBatch, onClick = { stopBatch = true }) { Text("Stop") }
+                TextButton(enabled = !stopBatch, onClick = operations::stopBatch) { Text("Stop") }
             }
         }
         if (progress != null) {
@@ -184,7 +151,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                     val name = photo.file.name
                     val checked = name in selected
                     val tile = Modifier.aspectRatio(1f).clip(RoundedCornerShape(12.dp))
-                    val interaction = if (selecting) {
+                    val interaction = if (selectMode) {
                         tile.toggleable(value = checked, enabled = progress == null) {
                             selected = if (it) selected + name else selected - name
                         }
@@ -193,7 +160,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                     }
                     Box(interaction) {
                         PhotoThumbnail(photo, library, Modifier.fillMaxSize(), "${photo.film.title} photo")
-                        if (selecting && checked) {
+                        if (selectMode && checked) {
                             Box(Modifier.matchParentSize().border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)))
                             Surface(
                                 modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
@@ -210,8 +177,6 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
         }
     }
 }
-
-private data class BatchProgress(val completed: Int, val total: Int)
 
 private val SelectionSaver = listSaver<List<String>, String>(save = { it }, restore = { it })
 
@@ -231,7 +196,8 @@ fun PhotoThumbnail(photo: Photo, library: PhotoLibrary, modifier: Modifier, desc
 }
 
 @Composable
-fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDeleted: () -> Unit) {
+internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () -> Unit, onDeleted: () -> Unit) {
+    val library = operations.library
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val original = remember(photo) { Recipe(photo.film) }
@@ -260,12 +226,12 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     val rendered by renderedPhoto(source, previewRecipe)
     val preview = rendered?.getOrNull()
     var showHistogram by rememberSaveable { mutableStateOf(false) }
-    var result by remember(photo) { mutableStateOf<ExportReceipt<android.net.Uri>?>(null) }
+    val currentExport = operations.editorExport?.takeIf { it.photo == photo }
     val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
-    val shareUri = result?.matching(exportRecipe)
-    var smallerExport by remember(photo) { mutableStateOf<Pair<Recipe, Int>?>(null) }
-    var reducedExport by remember(photo) { mutableStateOf(false) }
-    var exporting by remember { mutableStateOf(false) }
+    val shareUri = currentExport?.result?.matching(exportRecipe)
+    val smallerExport = currentExport?.smallerEdge?.let { currentExport.snapshot to it }
+    val reducedExport = currentExport?.reduced == true
+    val exporting = currentExport?.running == true
     var deleting by remember(photo) { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -404,47 +370,20 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
 
     fun startExport(snapshot: Recipe, maxEdge: Int? = null) {
         if (exporting || saving || deleting) return
-        exporting = true
-        smallerExport = null
-        result = null
-        message = if (maxEdge == null) "Exporting full resolution…" else "Exporting a smaller JPEG…"
-        scope.launch {
-            try {
-                val uri = withContext(Dispatchers.IO) { library.export(photo, snapshot, maxEdge) }
-                result = ExportReceipt(snapshot, uri)
-                reducedExport = maxEdge != null
-                message = null
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: ExportMemoryException) {
-                val edge = failure.suggestedMaxEdge
-                smallerExport = edge?.let { snapshot to it }
-                message = if (edge == null) "There is not enough memory to export this photo." else null
-            } catch (_: OutOfMemoryError) {
-                if (maxEdge == null) {
-                    smallerExport = snapshot to 2048
-                    message = null
-                } else {
-                    message = "There is not enough memory to export this photo at the selected size."
-                }
-            } catch (_: Exception) {
-                message = "Export failed. Check available storage and try again."
-            } finally {
-                exporting = false
-            }
-        }
+        message = null
+        operations.export(photo, snapshot, maxEdge)
     }
 
     smallerExport?.let { (snapshot, edge) ->
         AlertDialog(
-            onDismissRequest = { smallerExport = null },
+            onDismissRequest = { operations.dismissExportOffer() },
             title = { Text("Export a smaller JPEG?") },
             text = { Text("The requested size needs more memory. You can export a JPEG up to $edge px on its longest edge.") },
             confirmButton = {
                 TextButton(onClick = { startExport(snapshot, edge) }) { Text("Export smaller") }
             },
             dismissButton = {
-                TextButton(onClick = { smallerExport = null }) { Text("Cancel") }
+                TextButton(onClick = { operations.dismissExportOffer() }) { Text("Cancel") }
             }
         )
     }
@@ -549,7 +488,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
             savedByUser && !history.differsFrom(lastSaved, draft) -> "Edits saved"
             else -> null
         }
-        (message ?: completion)?.let {
+        (message ?: currentExport?.message ?: completion)?.let {
             Text(it, modifier = Modifier.padding(bottom = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp)
         }

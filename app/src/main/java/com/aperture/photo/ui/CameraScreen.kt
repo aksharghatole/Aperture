@@ -11,6 +11,7 @@ import android.hardware.SensorManager
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
@@ -62,13 +63,13 @@ import kotlinx.coroutines.delay
 import com.aperture.photo.camera.ShootingMode
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.library.Photo
-import com.aperture.photo.library.PhotoLibrary
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit, onCaptured: () -> Unit) {
+internal fun CameraScreen(operations: PhotoOperations, latest: Photo?, openLibrary: () -> Unit) {
+    val library = operations.library
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val haptics = LocalHapticFeedback.current
@@ -81,9 +82,10 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
     val scene = reading?.scene
     var ready by remember { mutableStateOf(false) }
     var canFlip by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
+    val busy = operations.captureBusy
+    BackHandler(enabled = busy) {}
     var error by remember { mutableStateOf<String?>(null) }
-    var captureMessage by remember { mutableStateOf<String?>(null) }
+    val captureMessage = operations.captureMessage
     var retry by remember { mutableIntStateOf(0) }
     var session by remember { mutableStateOf<CameraSession?>(null) }
     val roll = if (granted) deviceRoll() else null
@@ -157,7 +159,8 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                                 .padding(horizontal = 14.dp, vertical = 8.dp))
                     }
                 } else if (error == null) {
-                    CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 2.dp)
+                    if (busy) Text("Finishing capture…", Modifier.align(Alignment.Center))
+                    else CircularProgressIndicator(Modifier.align(Alignment.Center).size(28.dp), strokeWidth = 2.dp)
                 }
                 error?.let { message ->
                     CameraPrompt(message, "Retry", Modifier.align(Alignment.Center)) {
@@ -188,11 +191,11 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                         if (mode != item) reading = null
                         mode = item
                         session?.shootingMode = item
-                        captureMessage = null
+                        operations.clearCaptureMessage()
                     }, label = { Text(item.title) })
                 }
             }
-            FilmPicker(film) { film = it; captureMessage = null }
+            FilmPicker(film) { film = it; operations.clearCaptureMessage() }
         }
 
         Row(Modifier.fillMaxWidth().height(90.dp), verticalAlignment = Alignment.CenterVertically,
@@ -200,12 +203,12 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
             Box(Modifier.size(66.dp), contentAlignment = Alignment.Center) {
                 if (latest != null) {
                     Box(Modifier.size(49.dp).clip(RoundedCornerShape(10.dp)).clickable(
-                        role = Role.Button, onClickLabel = "Open library", onClick = openLibrary
+                        enabled = !busy, role = Role.Button, onClickLabel = "Open library", onClick = openLibrary
                     )) {
                         PhotoThumbnail(latest, library, Modifier.fillMaxSize(), "Last photo")
                     }
                 } else {
-                    TextButton(onClick = openLibrary) { Text("Photos", fontSize = 11.sp) }
+                    TextButton(enabled = !busy, onClick = openLibrary) { Text("Photos", fontSize = 11.sp) }
                 }
             }
             val shutterColor = MaterialTheme.colorScheme.primary.copy(alpha = if (ready) 1f else .36f)
@@ -214,27 +217,8 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                     .semantics { contentDescription = "Shutter" }
                     .clickable(enabled = ready && !busy, role = Role.Button, onClickLabel = "Take photo") {
                         val active = session ?: return@clickable
-                        val pending = try {
-                            library.beginCapture()
-                        } catch (_: Exception) {
-                            captureMessage = "Could not create a photo file"
-                            return@clickable
-                        }
-                        val selectedFilm = film
-                        busy = true
-                        captureMessage = "Saving photo…"
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        active.takePhoto(pending) { saved ->
-                            busy = false
-                            if (!saved) {
-                                library.discardCapture(pending)
-                                captureMessage = "Capture failed · try again"
-                            } else {
-                                val result = runCatching { library.commitCapture(pending, selectedFilm) }
-                                captureMessage = if (result.isSuccess) "Photo saved to library" else "Could not save the photo"
-                                if (result.isSuccess) onCaptured()
-                            }
-                        }
+                        operations.capture(film, active::takePhoto)
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -243,7 +227,7 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
             }
             Box(Modifier.size(66.dp), contentAlignment = Alignment.Center) {
                 if (canFlip) TextButton(enabled = !busy, onClick = {
-                    captureMessage = null
+                    operations.clearCaptureMessage()
                     session?.flip()
                 }) { Text("Flip", fontSize = 11.sp) }
             }
@@ -258,8 +242,8 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Aperture", fontSize = 27.sp, fontWeight = FontWeight.Medium, letterSpacing = (-1).sp)
                 Row {
-                    if (granted) TextButton(onClick = reference.open) { Text("Reference") }
-                    TextButton(onClick = openLibrary) { Text("Library") }
+                    if (granted) TextButton(enabled = !busy, onClick = reference.open) { Text("Reference") }
+                    TextButton(enabled = !busy, onClick = openLibrary) { Text("Library") }
                 }
             }
             if (wideLayout) {
@@ -278,7 +262,7 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
     LaunchedEffect(captureMessage) {
         if (!busy && captureMessage != null) {
             kotlinx.coroutines.delay(2900)
-            captureMessage = null
+            operations.clearCaptureMessage()
         }
     }
 }
