@@ -28,7 +28,24 @@ internal class SavedEditException(val problem: SavedEditProblem, cause: IOExcept
 
 class PhotoLibrary(private val context: Context) {
     private val directory = File(context.filesDir, "photos").apply { mkdirs() }
+    private val favoritesFile = AtomicFile(File(context.filesDir, "photo-favorites"))
     private val resolver = context.contentResolver
+
+    fun favoriteNames(): Set<String> = synchronized(favoritesLock) {
+        val stored = runCatching { FavoriteIndexCodec.decode(favoritesFile.readFully()) }.getOrDefault(emptySet())
+        val existing = directory.listFiles().orEmpty().asSequence().filter { it.isFile && it.extension == "photo" }
+            .map { it.name }.toSet()
+        val valid = stored intersect existing
+        if (valid != stored) writeFavorites(valid)
+        valid
+    }
+
+    fun setFavorite(photo: Photo, favorite: Boolean) = synchronized(favoritesLock) {
+        check(photo.file.parentFile == directory && photo.file.isFile) { "Photo does not belong to this library" }
+        val names = favoriteNames().toMutableSet()
+        if (favorite) names.add(photo.file.name) else names.remove(photo.file.name)
+        writeFavorites(names)
+    }
 
     fun all(): List<Photo> = directory.listFiles().orEmpty()
         .filter { it.isFile && it.extension == "photo" }
@@ -184,6 +201,7 @@ class PhotoLibrary(private val context: Context) {
         if (!photo.file.isFile) throw FileNotFoundException("Photo no longer exists")
         if (!photo.file.delete()) throw IOException("Could not remove the photo")
         AtomicFile(File(directory, "${photo.file.name}.edits")).delete()
+        synchronized(favoritesLock) { writeFavorites(favoriteNames() - photo.file.name) }
     }
 
     private fun editFile(photo: Photo): AtomicFile {
@@ -191,11 +209,23 @@ class PhotoLibrary(private val context: Context) {
         return AtomicFile(File(directory, "${photo.file.name}.edits"))
     }
 
+    private fun writeFavorites(names: Set<String>) {
+        val output = favoritesFile.startWrite()
+        try {
+            output.write(FavoriteIndexCodec.encode(names))
+            favoritesFile.finishWrite(output)
+        } catch (failure: Throwable) {
+            favoritesFile.failWrite(output)
+            throw failure
+        }
+    }
+
     private companion object {
         val recoveryLock = Any()
         val activeCaptures = mutableSetOf<String>()
         val activeExports = mutableSetOf<String>()
         val editFileLock = Any()
+        val favoritesLock = Any()
     }
 
     internal fun thumbnail(photo: Photo): Bitmap {
