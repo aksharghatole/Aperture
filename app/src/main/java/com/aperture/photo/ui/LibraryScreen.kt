@@ -40,6 +40,8 @@ import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
+import com.aperture.photo.library.PhotoInformation
+import com.aperture.photo.library.readPhotoInformation
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
 import com.aperture.photo.library.filterFavoritePhotos
@@ -216,6 +218,11 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
     val library = operations.library
     var isFavorite by remember(photo, library) { mutableStateOf(photo.file.name in library.favoriteNames()) }
     val context = LocalContext.current
+    var showPhotoInfo by rememberSaveable(photo.file.name) { mutableStateOf(false) }
+    var photoInfo by remember(photo.file) { mutableStateOf<PhotoInformation?>(null) }
+    LaunchedEffect(photo.file) {
+        photoInfo = withContext(Dispatchers.IO) { runCatching { readPhotoInformation(photo.file) }.getOrNull() }
+    }
     val scope = rememberCoroutineScope()
     val original = remember(photo) { Recipe(photo.film) }
     var history by rememberSaveable(photo.file.name, stateSaver = EditHistorySaver) {
@@ -419,9 +426,18 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
                 TextButton(enabled = !saving && !exporting && !deleting, onClick = { confirmDelete = true }) {
                     Text("Delete")
                 }
+                TextButton(onClick = { showPhotoInfo = !showPhotoInfo }) { Text("Info") }
                 TextButton(enabled = editsLoaded && source != null && !exporting && !saving && !deleting, onClick = {
                     startExport(exportRecipe)
                 }) { Text(if (savedEditProblem == null) "Export" else "Export original") }
+            }
+        }
+
+        if (showPhotoInfo) {
+            if (photoInfo == null) {
+                Text("Reading photo information…", modifier = Modifier.padding(vertical = 8.dp))
+            } else {
+                PhotoInfoPanel(photoInfo!!)
             }
         }
 
@@ -553,6 +569,30 @@ private fun renderedPhoto(source: Bitmap?, recipe: Recipe): State<Result<Bitmap>
         }
     }
     return result
+}
+
+@Composable
+private fun PhotoInfoPanel(info: PhotoInformation) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        PhotoInfoRow("Dimensions", info.dimensions)
+        PhotoInfoRow("Format", info.format)
+        PhotoInfoRow("File size", info.fileSize)
+        PhotoInfoRow("File date", info.fileDate)
+        PhotoInfoRow("Capture date", info.captureDate ?: "Unavailable")
+        PhotoInfoRow("Exposure", info.exposure ?: "Unavailable")
+        PhotoInfoRow("ISO", info.iso ?: "Unavailable")
+        PhotoInfoRow("Aperture", info.aperture ?: "Unavailable")
+        PhotoInfoRow("Focal length", info.focalLength ?: "Unavailable")
+        PhotoInfoRow("Orientation", info.orientation ?: "Unavailable")
+    }
+}
+
+@Composable
+private fun PhotoInfoRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+        Text(value, fontSize = 12.sp)
+    }
 }
 
 @Composable
