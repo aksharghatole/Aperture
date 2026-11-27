@@ -13,11 +13,13 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
+import androidx.camera.core.ZoomState
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Observer
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
@@ -29,6 +31,7 @@ internal class CameraSession(
     private val owner: LifecycleOwner,
     private val onScene: (SceneReading?) -> Unit,
     private val onReady: (ready: Boolean, canFlip: Boolean, hasAnalysis: Boolean) -> Unit,
+    private val onZoom: (CameraZoom) -> Unit,
     private val onError: (String) -> Unit
 ) {
     private val main = ContextCompat.getMainExecutor(view.context)
@@ -46,6 +49,7 @@ internal class CameraSession(
     private val providerFuture = ProcessCameraProvider.getInstance(view.context)
     private var provider: ProcessCameraProvider? = null
     private var camera: Camera? = null
+    private var zoomObserver: Observer<ZoomState>? = null
     private var preview: Preview? = null
     private var capture: ImageCapture? = null
     private var analysis: ImageAnalysis? = null
@@ -116,6 +120,7 @@ internal class CameraSession(
             canFlip = hasBack && hasFront
             try {
                 camera = available.bindToLifecycle(owner, selector, group.addUseCase(analysisUseCase).build())
+                observeZoom()
                 analysis = analysisUseCase
                 analysisUseCase.setAnalyzer(analyzer, sceneAnalyzer)
             } catch (_: IllegalArgumentException) {
@@ -125,6 +130,7 @@ internal class CameraSession(
                 val basicGroup = UseCaseGroup.Builder().setViewPort(viewport)
                     .addUseCase(previewUseCase).addUseCase(captureUseCase).build()
                 camera = available.bindToLifecycle(owner, selector, basicGroup)
+                observeZoom()
             }
             if (view.previewStreamState.value == PreviewView.StreamState.STREAMING) {
                 applyFilm()
@@ -139,6 +145,29 @@ internal class CameraSession(
     fun flip() {
         front = !front
         bind()
+    }
+
+    private fun observeZoom() {
+        val current = camera ?: return
+        val observer = Observer<ZoomState> { state ->
+            onZoom(CameraZoom(state.zoomRatio, state.minZoomRatio, state.maxZoomRatio))
+        }
+        zoomObserver = observer
+        current.cameraInfo.zoomState.observe(owner, observer)
+    }
+
+    fun zoomBy(scale: Float) {
+        val current = camera ?: return
+        val state = current.cameraInfo.zoomState.value ?: return
+        current.cameraControl.setZoomRatio(
+            CameraZoom(state.zoomRatio, state.minZoomRatio, state.maxZoomRatio).clamp(state.zoomRatio * scale)
+        )
+    }
+
+    fun setZoomRatio(ratio: Float) {
+        val current = camera ?: return
+        val state = current.cameraInfo.zoomState.value ?: return
+        current.cameraControl.setZoomRatio(CameraZoom(state.zoomRatio, state.minZoomRatio, state.maxZoomRatio).clamp(ratio))
     }
 
     fun focus(x: Float, y: Float) {
@@ -189,6 +218,8 @@ internal class CameraSession(
     }
 
     private fun unbind() {
+        camera?.cameraInfo?.zoomState?.let { state -> zoomObserver?.let(state::removeObserver) }
+        zoomObserver = null
         analysis?.clearAnalyzer()
         listOfNotNull(preview, capture, analysis).takeIf { it.isNotEmpty() }?.let {
             provider?.unbind(*it.toTypedArray())
@@ -197,6 +228,7 @@ internal class CameraSession(
         analysis = null
         camera = null
         capture = null
+        onZoom(CameraZoom())
     }
 
     fun close() {

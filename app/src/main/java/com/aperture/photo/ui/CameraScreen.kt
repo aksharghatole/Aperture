@@ -21,6 +21,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -56,6 +57,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aperture.photo.camera.CameraSession
+import com.aperture.photo.camera.CameraZoom
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.CompositionGuide
 import com.aperture.photo.camera.CompositionGuideGeometry
@@ -106,6 +108,7 @@ internal fun CameraScreen(
     val captureMessage = operations.captureMessage
     var retry by remember { mutableIntStateOf(0) }
     var session by remember { mutableStateOf<CameraSession?>(null) }
+    var zoom by remember { mutableStateOf(CameraZoom()) }
     val roll = if (granted) deviceRoll() else null
 
     val dispatchVolumeShutter by rememberUpdatedState {
@@ -152,7 +155,7 @@ internal fun CameraScreen(
                                 ready = active
                                 canFlip = flip
                                 if (!active) reading = null
-                            }, { error = it })
+                        }, { zoom = it }, { error = it })
                         session = connection
                         onDispose {
                             connection.close()
@@ -178,9 +181,15 @@ internal fun CameraScreen(
                         Image(image, null, Modifier.matchParentSize(),
                             contentScale = ContentScale.Crop, alpha = reference.opacity)
                     }
-                    GuideOverlay(scene, roll, mode, guide, Modifier.matchParentSize().pointerInput(session) {
-                        detectTapGestures { session?.focus(it.x, it.y) }
-                    })
+                    GuideOverlay(scene, roll, mode, guide, Modifier.matchParentSize()
+                        .pointerInput(session) {
+                            detectTransformGestures { _, _, zoomChange, _ ->
+                                if (zoomChange != 1f) session?.zoomBy(zoomChange)
+                            }
+                        }
+                        .pointerInput(session) {
+                            detectTapGestures { session?.focus(it.x, it.y) }
+                        })
                     Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         val hint = captureMessage ?: Composition.guidance(scene, roll, mode, analysisAvailable = false)
@@ -242,6 +251,17 @@ internal fun CameraScreen(
             } else if (guide == CompositionGuide.OFF) {
                 Text("Grid off · assistant framing cues remain", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp)
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Zoom ${"%.1f".format(zoom.ratio)}×", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp)
+                zoom.presets().forEach { preset ->
+                    TextButton(enabled = ready && !busy, onClick = { session?.setZoomRatio(preset) },
+                        modifier = Modifier.semantics { contentDescription = "Zoom to ${preset.toInt()} times" }) {
+                        Text("${preset.toInt()}×")
+                    }
+                }
             }
             TextButton(onClick = {
                 volumeShutterEnabled = !volumeShutterEnabled
