@@ -7,6 +7,9 @@ internal class EditHistory private constructor(val snapshots: List<Recipe>, val 
     val canUndo: Boolean get() = cursor > 0
     val canRedo: Boolean get() = cursor < snapshots.lastIndex
 
+    fun differsFrom(saved: EditHistory, draft: Recipe? = null): Boolean =
+        snapshots != saved.snapshots || cursor != saved.cursor || (draft != null && draft != current)
+
     fun commit(recipe: Recipe): EditHistory {
         if (recipe == current) return this
         val next = (snapshots.take(cursor + 1) + recipe).takeLast(MaxSnapshots)

@@ -203,7 +203,7 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                     Box(Modifier.size(49.dp).clip(RoundedCornerShape(10.dp)).clickable(
                         role = Role.Button, onClickLabel = "Open library", onClick = openLibrary
                     )) {
-                        PhotoThumbnail(latest, Modifier.fillMaxSize(), "Last photo")
+                        PhotoThumbnail(latest, library, Modifier.fillMaxSize(), "Last photo")
                     }
                 } else {
                     TextButton(onClick = openLibrary) { Text("Photos", fontSize = 11.sp) }
@@ -228,7 +228,7 @@ fun CameraScreen(library: PhotoLibrary, latest: Photo?, openLibrary: () -> Unit,
                         active.takePhoto(pending) { saved ->
                             busy = false
                             if (!saved) {
-                                pending.delete()
+                                library.discardCapture(pending)
                                 captureMessage = "Capture failed · try again"
                             } else {
                                 val result = runCatching { library.commitCapture(pending, selectedFilm) }

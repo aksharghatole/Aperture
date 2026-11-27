@@ -1,9 +1,13 @@
 package com.aperture.photo.library
 
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
+import android.os.Build
+import android.os.Bundle
 import android.util.AtomicFile
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
@@ -17,6 +21,11 @@ import java.util.UUID
 
 data class Photo(val file: File, val film: Film)
 
+internal enum class SavedEditProblem { CORRUPT, UNSUPPORTED, UNREADABLE }
+
+internal class SavedEditException(val problem: SavedEditProblem, cause: IOException? = null) :
+    IOException("Saved edits: $problem", cause)
+
 class PhotoLibrary(private val context: Context) {
     private val directory = File(context.filesDir, "photos").apply { mkdirs() }
     private val resolver = context.contentResolver
@@ -29,14 +38,22 @@ class PhotoLibrary(private val context: Context) {
             Photo(file, film ?: Film.CLEAN)
         }
 
-    fun beginCapture(): File = File.createTempFile("capture-", ".jpg", context.cacheDir)
+    fun beginCapture(): File = synchronized(recoveryLock) {
+        File.createTempFile("capture-", ".jpg", context.cacheDir).also { activeCaptures.add(it.name) }
+    }
+
+    fun discardCapture(pending: File) = synchronized(recoveryLock) {
+        pending.delete()
+        activeCaptures.remove(pending.name)
+        Unit
+    }
 
     fun commitCapture(pending: File, film: Film): Photo = try {
         val file = destination(film)
         if (!pending.renameTo(file)) throw IOException("Could not save the photo")
         Photo(file, film)
     } finally {
-        pending.delete()
+        discardCapture(pending)
     }
 
     fun import(uri: Uri): Photo {
@@ -47,7 +64,66 @@ class PhotoLibrary(private val context: Context) {
             PhotoRenderer.decode(pending, 320).recycle()
             return commitCapture(pending, Film.CLEAN)
         } finally {
-            pending.delete()
+            discardCapture(pending)
+        }
+    }
+
+    internal fun recoverInterruptedWork(nowMillis: Long = System.currentTimeMillis()) {
+        synchronized(recoveryLock) {
+            context.cacheDir.listFiles().orEmpty().forEach { file ->
+                if (file.isFile && file.name !in activeCaptures &&
+                    RecoveryPolicy.isCapture(file.name, file.lastModified(), nowMillis)) file.delete()
+            }
+        }
+        synchronized(editFileLock) {
+            directory.listFiles().orEmpty().forEach { file ->
+                val originalName = RecoveryPolicy.orphanCandidate(file.name, file.lastModified(), nowMillis)
+                if (file.isFile && originalName != null && !File(directory, originalName).exists()) file.delete()
+            }
+        }
+        // Some providers do not expose owner metadata or support pending queries. Leave those rows alone.
+        runCatching { recoverPendingExports(nowMillis) }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun recoverPendingExports(nowMillis: Long) {
+        val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val projection = arrayOf(
+            MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME,
+            MediaStore.MediaColumns.RELATIVE_PATH, MediaStore.MediaColumns.OWNER_PACKAGE_NAME,
+            MediaStore.MediaColumns.DATE_ADDED, MediaStore.MediaColumns.IS_PENDING
+        )
+        val selection = "${MediaStore.MediaColumns.OWNER_PACKAGE_NAME} = ? AND " +
+            "${MediaStore.MediaColumns.IS_PENDING} = 1 AND ${MediaStore.MediaColumns.DATE_ADDED} < ?"
+        val args = arrayOf(context.packageName, ((nowMillis - RecoveryPolicy.MaxAgeMillis) / 1000L).toString())
+        val cursor = if (Build.VERSION.SDK_INT >= 30) {
+            val query = Bundle().apply {
+                putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_ONLY)
+                putString(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                putStringArray(android.content.ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, args)
+            }
+            resolver.query(collection, projection, query, null)
+        } else {
+            resolver.query(MediaStore.setIncludePending(collection), projection, selection, args, null)
+        }
+        cursor?.use {
+            while (it.moveToNext()) {
+                val id = it.getLong(0)
+                val name = it.getString(1) ?: continue
+                if (id <= 0 || !RecoveryPolicy.isPendingExport(
+                        name, it.getString(2), it.getString(3), context.packageName,
+                        it.getLong(4), it.getInt(5) == 1, nowMillis
+                    )) continue
+                synchronized(recoveryLock) {
+                    if (name !in activeExports) {
+                        val row = ContentUris.withAppendedId(collection, id)
+                        runCatching {
+                            resolver.delete(row, "$selection AND ${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+                                args + name)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -59,25 +135,40 @@ class PhotoLibrary(private val context: Context) {
         val input = try {
             file.openRead()
         } catch (failure: FileNotFoundException) {
-            if (!file.baseFile.exists()) return@synchronized null
-            throw failure
+            if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return@synchronized null
+            throw SavedEditException(SavedEditProblem.UNREADABLE, failure)
+        } catch (failure: IOException) {
+            throw SavedEditException(SavedEditProblem.UNREADABLE, failure)
         }
-        val bytes = input.use { stream ->
-            val buffer = ByteArray(EditHistoryCodec.MaxEncodedSize + 1)
-            var size = 0
-            while (size < buffer.size) {
-                val count = stream.read(buffer, size, buffer.size - size)
-                if (count < 0) break
-                size += count
+        val bytes = try {
+            input.use { stream ->
+                val buffer = ByteArray(EditHistoryCodec.MaxEncodedSize + 1)
+                var size = 0
+                while (size < buffer.size) {
+                    val count = stream.read(buffer, size, buffer.size - size)
+                    if (count < 0) break
+                    size += count
+                }
+                buffer.copyOf(size)
             }
-            buffer.copyOf(size)
+        } catch (failure: IOException) {
+            throw SavedEditException(SavedEditProblem.UNREADABLE, failure)
         }
-        if (bytes.size > EditHistoryCodec.MaxEncodedSize) throw IOException("Edit history is too large")
-        EditHistoryCodec.decode(bytes.toString(Charsets.UTF_8)) ?: throw IOException("Invalid edit history")
+        val encoded = bytes.toString(Charsets.UTF_8)
+        if (EditHistoryCodec.isUnsupportedVersion(encoded)) throw SavedEditException(SavedEditProblem.UNSUPPORTED)
+        if (bytes.size > EditHistoryCodec.MaxEncodedSize) throw SavedEditException(SavedEditProblem.CORRUPT)
+        EditHistoryCodec.decode(encoded) ?: throw SavedEditException(SavedEditProblem.CORRUPT)
     }
 
-    internal fun saveEdits(photo: Photo, history: EditHistory) = synchronized(editFileLock) {
+    internal fun saveEdits(
+        photo: Photo, history: EditHistory, replaceProblem: SavedEditProblem? = null
+    ) = synchronized(editFileLock) {
         val file = editFile(photo)
+        try {
+            loadEdits(photo)
+        } catch (failure: SavedEditException) {
+            if (failure.problem != replaceProblem || failure.problem == SavedEditProblem.UNREADABLE) throw failure
+        }
         val output = file.startWrite()
         try {
             output.write(EditHistoryCodec.encode(history).toByteArray(Charsets.UTF_8))
@@ -101,22 +192,41 @@ class PhotoLibrary(private val context: Context) {
     }
 
     private companion object {
+        val recoveryLock = Any()
+        val activeCaptures = mutableSetOf<String>()
+        val activeExports = mutableSetOf<String>()
         val editFileLock = Any()
+    }
+
+    internal fun thumbnail(photo: Photo): Bitmap {
+        val recipe = try {
+            loadEdits(photo)?.current
+        } catch (_: IOException) {
+            null
+        } ?: Recipe(photo.film)
+        val source = PhotoRenderer.decode(photo.file, 320)
+        return try {
+            PhotoRenderer.render(source, recipe)
+        } finally {
+            source.recycle()
+        }
     }
 
     fun exportSavedEdits(photo: Photo): Uri =
         export(photo, loadEdits(photo)?.current ?: Recipe(photo.film))
 
-    fun export(photo: Photo, recipe: Recipe): Uri {
-        val source = PhotoRenderer.decode(photo.file)
+    fun export(photo: Photo, recipe: Recipe, maxEdge: Int? = null): Uri {
+        val source = PhotoRenderer.decodeForExport(photo.file, recipe, maxEdge)
         val rendered = try {
             PhotoRenderer.render(source, recipe)
         } finally {
             source.recycle()
         }
+        val name = "Aperture-${System.currentTimeMillis()}-${UUID.randomUUID()}.jpg"
+        synchronized(recoveryLock) { activeExports.add(name) }
         try {
             val values = ContentValues().apply {
-                put(MediaStore.Images.Media.DISPLAY_NAME, "Aperture-${System.currentTimeMillis()}.jpg")
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Aperture")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -138,6 +248,7 @@ class PhotoLibrary(private val context: Context) {
                 throw failure
             }
         } finally {
+            synchronized(recoveryLock) { activeExports.remove(name) }
             rendered.recycle()
         }
     }

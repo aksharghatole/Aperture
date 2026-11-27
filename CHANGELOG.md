@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Check export memory before decoding and offer an explicit smaller JPEG when needed.
+- Recover stale Aperture temporary files, orphan edit files, and verified unfinished exports.
 - Added regression fixtures for cropped, rotated, and mirrored camera luma sampling.
 - Added Master RGB and individual red, green, and blue curves with live previews.
 - Clear frame-analysis guidance after invalid frames or 800 ms without a fresh reading.
@@ -11,6 +13,9 @@
 - Added non-destructive crop presets with drag positioning and full-resolution export.
 - Added a live Darkroom luminance histogram with near-black and near-white percentages.
 - Added a Save edits action that restores a photo’s undo and redo history when reopened.
+- Preserve unreadable Darkroom edit files and offer original export or confirmed replacement.
+- Prompt before leaving unsaved Darkroom edits and associate save and share status with the edits that were actually saved or exported.
+- Show saved Darkroom edits in Library thumbnails and use the original framing if the edit file fails to load.
 - Added Darkroom undo and redo for film selection, adjustments, rotation, and reset. A slider gesture creates one history step.
 
 ## 0.3.0

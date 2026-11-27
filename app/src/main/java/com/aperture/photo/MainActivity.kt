@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,8 @@ import com.aperture.photo.library.PhotoLibrary
 import com.aperture.photo.ui.CameraScreen
 import com.aperture.photo.ui.EditorScreen
 import com.aperture.photo.ui.LibraryScreen
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -33,6 +36,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             val library = remember { PhotoLibrary(applicationContext) }
+            LaunchedEffect(library) {
+                withContext(Dispatchers.IO) { library.recoverInterruptedWork() }
+            }
             val screenState = rememberSaveableStateHolder()
             var inLibrary by rememberSaveable { mutableStateOf(false) }
             var selectedName by rememberSaveable { mutableStateOf<String?>(null) }

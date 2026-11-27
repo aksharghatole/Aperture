@@ -11,7 +11,6 @@ import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import java.io.File
-import kotlin.math.ceil
 import kotlin.math.pow
 
 object PhotoRenderer {
@@ -38,13 +37,27 @@ object PhotoRenderer {
         decode(ImageDecoder.createSource(file), maxEdge)
 
     fun decode(source: ImageDecoder.Source, maxEdge: Int? = null): Bitmap =
-        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            if (maxEdge != null) {
-                val longest = maxOf(info.size.width, info.size.height)
-                decoder.setTargetSampleSize(ceil(longest.toDouble() / maxEdge).toInt().coerceAtLeast(1))
-            }
+        decode(source, maxEdge) { _, _ -> }
+
+    internal fun decodeForExport(
+        file: File, recipe: Recipe, maxEdge: Int?, memoryBudget: () -> Long = {
+            val runtime = Runtime.getRuntime()
+            ExportMemory.budget(runtime.maxMemory(), runtime.totalMemory() - runtime.freeMemory())
         }
+    ): Bitmap = decode(ImageDecoder.createSource(file), maxEdge) { width, height ->
+        ExportMemory.check(width, height, recipe, maxEdge, memoryBudget())
+    }
+
+    private fun decode(
+        source: ImageDecoder.Source, maxEdge: Int?, checkHeader: (Int, Int) -> Unit
+    ): Bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        checkHeader(info.size.width, info.size.height)
+        decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        if (maxEdge != null) {
+            val longest = maxOf(info.size.width, info.size.height)
+            decoder.setTargetSampleSize(ExportMemory.sampleSize(longest, maxEdge))
+        }
+    }
 
     fun render(source: Bitmap, recipe: Recipe): Bitmap {
         val turns = Math.floorMod(recipe.quarterTurns, 4)
