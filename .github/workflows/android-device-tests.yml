@@ -44,15 +44,10 @@ jobs:
           target: default
           arch: x86_64
           disable-animations: true
-          script: |
-            set +e
-            ./gradlew connectedDebugAndroidTest > /tmp/android-device-tests.log 2>&1
-            test_status=$?
-            cat /tmp/android-device-tests.log
-            if [ "$test_status" -ne 0 ]; then
-              python3 .github/scripts/report-instrumentation-failures.py
-            fi
-            exit "$test_status"
+          script: ./gradlew connectedDebugAndroidTest > /tmp/android-device-tests.log 2>&1
+      - name: Report instrumentation failure details
+        if: failure()
+        run: python3 .github/scripts/report-instrumentation-failures.py
       - name: Upload instrumentation reports
         if: always()
         uses: actions/upload-artifact@v4
