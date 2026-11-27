@@ -61,7 +61,7 @@ class PhotoLibrary(private val context: Context) {
         try {
             val input = resolver.openInputStream(uri) ?: throw IOException("Could not open the photo")
             input.use { source -> pending.outputStream().use { source.copyTo(it) } }
-            PhotoRenderer.decode(pending, 320).recycle()
+            PhotoRenderer.validateStillImport(pending)
             return commitCapture(pending, Film.CLEAN)
         } finally {
             discardCapture(pending)
@@ -225,6 +225,7 @@ class PhotoLibrary(private val context: Context) {
         val name = "Aperture-${System.currentTimeMillis()}-${UUID.randomUUID()}.jpg"
         synchronized(recoveryLock) { activeExports.add(name) }
         try {
+            PhotoRenderer.flattenForJpeg(rendered)
             val values = ContentValues().apply {
                 put(MediaStore.Images.Media.DISPLAY_NAME, name)
                 put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")

@@ -1,6 +1,6 @@
 # Aperture
 
-[Build and install](#build-and-install) · [Camera and darkroom](#camera-and-darkroom) · [Device verification](#device-verification) · [Actions](https://github.com/aksharghatole/Aperture/actions)
+[Build and install](#build-and-install) · [Camera and darkroom](#camera-and-darkroom) · [Image format policy](#imported-images-and-jpeg-transparency) · [Device verification](#device-verification) · [Actions](https://github.com/aksharghatole/Aperture/actions)
 
 Aperture is an offline photography app for Android 10 and newer. It includes a CameraX viewfinder, composition and level guidance, live film looks, an on-device library, and a basic darkroom.
 
@@ -28,6 +28,10 @@ Use **Reference** to pick an image and adjust its opacity. The overlay is center
 Portrait mode uses Android’s offline frontal face detector. It shows an eye-position cue after two nearby detections of a single confident face. Groups, profiles, small faces, and devices without working detection can use the upper guide manually.
 
 The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device. If camera analysis stalls or returns an invalid frame, Aperture drops its scene cues and keeps manual guides available.
+
+## Imported images and JPEG transparency
+
+Aperture uses Android’s image decoder for still photos, including JPEG, PNG, and WebP. It rejects animations the decoder recognizes, such as animated GIF and WebP. Extract a still frame before importing one. Imports preserve the source file bytes. JPEG exports use a white background in transparent areas, including batch exports.
 
 ## Device verification
 

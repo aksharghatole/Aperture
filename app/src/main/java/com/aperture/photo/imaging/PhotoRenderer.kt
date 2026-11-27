@@ -8,9 +8,12 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
 import android.graphics.Shader
 import java.io.File
+import java.io.IOException
 import kotlin.math.pow
 
 object PhotoRenderer {
@@ -37,21 +40,46 @@ object PhotoRenderer {
         decode(ImageDecoder.createSource(file), maxEdge)
 
     fun decode(source: ImageDecoder.Source, maxEdge: Int? = null): Bitmap =
-        decode(source, maxEdge) { _, _ -> }
+        decode(source, maxEdge) {}
+
+    internal fun validateStillImport(file: File) {
+        try {
+            decode(ImageDecoder.createSource(file), 320, ::requireStillImage).recycle()
+        } catch (failure: ImageInputException) {
+            throw failure
+        } catch (failure: IOException) {
+            throw ImageInputException("Unsupported or damaged image. Try a still JPEG, PNG, or WebP.", failure)
+        }
+    }
+
+    private fun requireStillImage(info: ImageDecoder.ImageInfo) {
+        if (info.isAnimated) {
+            throw ImageInputException("Animated images cannot be imported or exported. Choose a still image or extract a frame first.")
+        }
+    }
+
+    internal fun flattenForJpeg(bitmap: Bitmap) {
+        if (bitmap.hasAlpha()) Canvas(bitmap).drawColor(Color.WHITE, PorterDuff.Mode.DST_OVER)
+    }
 
     internal fun decodeForExport(
         file: File, recipe: Recipe, maxEdge: Int?, memoryBudget: () -> Long = {
             val runtime = Runtime.getRuntime()
             ExportMemory.budget(runtime.maxMemory(), runtime.totalMemory() - runtime.freeMemory())
         }
-    ): Bitmap = decode(ImageDecoder.createSource(file), maxEdge) { width, height ->
-        ExportMemory.check(width, height, recipe, maxEdge, memoryBudget())
+    ): Bitmap = try {
+        decode(ImageDecoder.createSource(file), maxEdge) { info ->
+            requireStillImage(info)
+            ExportMemory.check(info.size.width, info.size.height, recipe, maxEdge, memoryBudget())
+        }
+    } catch (failure: ImageDecoder.DecodeException) {
+        throw ImageInputException("The original image could not be decoded. Try reimporting a valid still image.", failure)
     }
 
     private fun decode(
-        source: ImageDecoder.Source, maxEdge: Int?, checkHeader: (Int, Int) -> Unit
+        source: ImageDecoder.Source, maxEdge: Int?, checkHeader: (ImageDecoder.ImageInfo) -> Unit
     ): Bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
-        checkHeader(info.size.width, info.size.height)
+        checkHeader(info)
         decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         if (maxEdge != null) {
             val longest = maxOf(info.size.width, info.size.height)
@@ -84,6 +112,7 @@ object PhotoRenderer {
         if (recipe.vignette > 0f) {
             val alpha = (recipe.vignette.coerceIn(0f, 1f) * 220).toInt()
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_ATOP)
                 shader = RadialGradient(
                     .5f, .5f, .707f,
                     intArrayOf(Color.TRANSPARENT, Color.TRANSPARENT, Color.argb(alpha, 0, 0, 0)),

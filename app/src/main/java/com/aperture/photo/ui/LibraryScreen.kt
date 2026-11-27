@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.aperture.photo.imaging.ImageInputException
 import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
@@ -95,8 +96,10 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
                 open(photo)
             } catch (failure: CancellationException) {
                 throw failure
+            } catch (failure: ImageInputException) {
+                error = failure.message
             } catch (_: Exception) {
-                error = "This image could not be imported."
+                error = "This image could not be opened. Check its access and try again."
             } catch (_: OutOfMemoryError) {
                 error = "This image is too large to import."
             } finally {
@@ -487,6 +490,9 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             shareUri != null -> if (reducedExport) "Smaller JPEG saved in Pictures/Aperture" else "Saved in Pictures/Aperture"
             savedByUser && !history.differsFrom(lastSaved, draft) -> "Edits saved"
             else -> null
+        }
+        if (source?.hasAlpha() == true) {
+            Text("JPEG exports fill transparency with white.", style = MaterialTheme.typography.labelSmall)
         }
         (message ?: currentExport?.message ?: completion)?.let {
             Text(it, modifier = Modifier.padding(bottom = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
