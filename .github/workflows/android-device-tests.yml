@@ -46,24 +46,11 @@ jobs:
           disable-animations: true
           script: |
             set +e
-            ./gradlew connectedDebugAndroidTest
+            ./gradlew connectedDebugAndroidTest > /tmp/android-device-tests.log 2>&1
             test_status=$?
+            cat /tmp/android-device-tests.log
             if [ "$test_status" -ne 0 ]; then
-              python3 - <<'PY'
-            import glob
-            import xml.etree.ElementTree as ET
-
-            for report in glob.glob("app/build/outputs/androidTest-results/connected/**/*.xml", recursive=True):
-                try:
-                    root = ET.parse(report).getroot()
-                except (ET.ParseError, OSError):
-                    continue
-                for failure in root.findall(".//failure") + root.findall(".//error"):
-                    message = " ".join((failure.get("message") or failure.text or "Android instrumentation test failed").split())
-                    for token, escaped in (("%", "%25"), ("\r", "%0D"), ("\n", "%0A"), (":", "%3A"), (",", "%2C")):
-                        message = message.replace(token, escaped)
-                    print(f"::error title=Android instrumentation failure,file={report}::{message[:4000]}")
-            PY
+              python3 .github/scripts/report-instrumentation-failures.py
             fi
             exit "$test_status"
       - name: Upload instrumentation reports
