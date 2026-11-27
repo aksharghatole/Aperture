@@ -58,6 +58,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aperture.photo.camera.CameraSession
 import com.aperture.photo.camera.CameraZoom
+import com.aperture.photo.camera.ExposureCompensation
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.CompositionGuide
 import com.aperture.photo.camera.CompositionGuideGeometry
@@ -109,6 +110,9 @@ internal fun CameraScreen(
     var retry by remember { mutableIntStateOf(0) }
     var session by remember { mutableStateOf<CameraSession?>(null) }
     var zoom by remember { mutableStateOf(CameraZoom()) }
+    var exposure by remember { mutableStateOf<ExposureCompensation?>(null) }
+    var exposureError by remember { mutableStateOf(false) }
+    var exposureRequestId by remember { mutableIntStateOf(0) }
     val roll = if (granted) deviceRoll() else null
 
     val dispatchVolumeShutter by rememberUpdatedState {
@@ -155,7 +159,7 @@ internal fun CameraScreen(
                                 ready = active
                                 canFlip = flip
                                 if (!active) reading = null
-                        }, { zoom = it }, { error = it })
+                        }, { zoom = it }, { exposure = it }, { error = it })
                         session = connection
                         onDispose {
                             connection.close()
@@ -262,6 +266,41 @@ internal fun CameraScreen(
                         Text("${preset.toInt()}×")
                     }
                 }
+            }
+            exposure?.takeIf { it.supported }?.let { current ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Camera exposure ${if (current.ev >= 0f) "+" else ""}${"%.1f".format(current.ev)} EV",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Spacer(Modifier.weight(1f))
+                    TextButton(enabled = current.index != 0 && !busy, onClick = {
+                        exposureError = false
+                        val requestId = ++exposureRequestId
+                        session?.setExposureCompensationIndex(0) { success ->
+                            if (requestId == exposureRequestId) exposureError = !success
+                        }
+                    }) { Text("Reset") }
+                }
+                Slider(
+                    value = current.index.toFloat(),
+                    onValueChange = { value ->
+                        val target = current.clamp(value.toInt())
+                        exposure = current.copy(index = target)
+                        exposureError = false
+                        val requestId = ++exposureRequestId
+                        session?.setExposureCompensationIndex(target) { success ->
+                            if (requestId == exposureRequestId) exposureError = !success
+                        }
+                    },
+                    valueRange = current.minIndex.toFloat()..current.maxIndex.toFloat(),
+                    steps = (current.maxIndex - current.minIndex - 1).coerceAtLeast(0),
+                    enabled = !busy,
+                    modifier = Modifier.width(120.dp).semantics {
+                        contentDescription = "Camera exposure compensation, ${"%.1f".format(current.ev)} EV"
+                    }
+                )
+            }
+            if (exposureError) {
+                Text("Camera exposure update failed.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
             }
             TextButton(onClick = {
                 volumeShutterEnabled = !volumeShutterEnabled

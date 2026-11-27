@@ -32,6 +32,7 @@ internal class CameraSession(
     private val onScene: (SceneReading?) -> Unit,
     private val onReady: (ready: Boolean, canFlip: Boolean, hasAnalysis: Boolean) -> Unit,
     private val onZoom: (CameraZoom) -> Unit,
+    private val onExposure: (ExposureCompensation?) -> Unit,
     private val onError: (String) -> Unit
 ) {
     private val main = ContextCompat.getMainExecutor(view.context)
@@ -50,6 +51,8 @@ internal class CameraSession(
     private var provider: ProcessCameraProvider? = null
     private var camera: Camera? = null
     private var zoomObserver: Observer<ZoomState>? = null
+    private var resetExposureOnBind = false
+    private var exposureRequestGeneration = 0
     private var preview: Preview? = null
     private var capture: ImageCapture? = null
     private var analysis: ImageAnalysis? = null
@@ -121,6 +124,7 @@ internal class CameraSession(
             try {
                 camera = available.bindToLifecycle(owner, selector, group.addUseCase(analysisUseCase).build())
                 observeZoom()
+                reportExposure(camera)
                 analysis = analysisUseCase
                 analysisUseCase.setAnalyzer(analyzer, sceneAnalyzer)
             } catch (_: IllegalArgumentException) {
@@ -131,6 +135,7 @@ internal class CameraSession(
                     .addUseCase(previewUseCase).addUseCase(captureUseCase).build()
                 camera = available.bindToLifecycle(owner, selector, basicGroup)
                 observeZoom()
+                reportExposure(camera)
             }
             if (view.previewStreamState.value == PreviewView.StreamState.STREAMING) {
                 applyFilm()
@@ -144,7 +149,41 @@ internal class CameraSession(
 
     fun flip() {
         front = !front
+        resetExposureOnBind = true
         bind()
+    }
+
+    private fun reportExposure(current: Camera?) {
+        val state = current?.cameraInfo?.exposureState
+        if (state == null) {
+            onExposure(null)
+            return
+        }
+        val range = state.exposureCompensationRange
+        onExposure(ExposureCompensation(state.exposureCompensationIndex, range.lower, range.upper,
+            state.exposureCompensationStep.toFloat()))
+        if (resetExposureOnBind) {
+            resetExposureOnBind = false
+            setExposureCompensationIndex(0) { }
+        }
+    }
+
+    fun setExposureCompensationIndex(index: Int, completed: (Boolean) -> Unit) {
+        val current = camera
+        val state = current?.cameraInfo?.exposureState
+        if (current == null || state == null) {
+            completed(false)
+            return
+        }
+        val range = state.exposureCompensationRange
+        val target = index.coerceIn(range.lower, range.upper)
+        val generation = ++exposureRequestGeneration
+        val future = current.cameraControl.setExposureCompensationIndex(target)
+        future.addListener({
+            val success = runCatching { future.get() == target }.getOrDefault(false)
+            if (generation == exposureRequestGeneration && camera === current) reportExposure(current)
+            completed(success)
+        }, main)
     }
 
     private fun observeZoom() {
@@ -218,8 +257,10 @@ internal class CameraSession(
     }
 
     private fun unbind() {
+        exposureRequestGeneration++
         camera?.cameraInfo?.zoomState?.let { state -> zoomObserver?.let(state::removeObserver) }
         zoomObserver = null
+        onExposure(null)
         analysis?.clearAnalyzer()
         listOfNotNull(preview, capture, analysis).takeIf { it.isNotEmpty() }?.let {
             provider?.unbind(*it.toTypedArray())
