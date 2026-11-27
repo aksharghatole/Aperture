@@ -113,6 +113,10 @@ internal fun CameraScreen(
     var exposure by remember { mutableStateOf<ExposureCompensation?>(null) }
     var exposureError by remember { mutableStateOf(false) }
     var exposureRequestId by remember { mutableIntStateOf(0) }
+    var analysisAvailable by remember { mutableStateOf(false) }
+    var diagnosticsEnabled by remember {
+        mutableStateOf(cameraPreferences.getBoolean("exposure_diagnostics_enabled", false))
+    }
     val roll = if (granted) deviceRoll() else null
 
     val dispatchVolumeShutter by rememberUpdatedState {
@@ -155,9 +159,10 @@ internal fun CameraScreen(
                     DisposableEffect(preview, owner) {
                         val connection = CameraSession(preview, owner, { next ->
                             reading = if (ready) SceneReading.accept(next, SystemClock.elapsedRealtime()) else null
-                        }, { active, flip, _ ->
+                        }, { active, flip, hasAnalysis ->
                                 ready = active
                                 canFlip = flip
+                                analysisAvailable = hasAnalysis
                                 if (!active) reading = null
                         }, { zoom = it }, { exposure = it }, { error = it })
                         session = connection
@@ -194,9 +199,14 @@ internal fun CameraScreen(
                         .pointerInput(session) {
                             detectTapGestures { session?.focus(it.x, it.y) }
                         })
+                    if (diagnosticsEnabled && analysisAvailable) {
+                        ExposureDiagnosticsOverlay(scene?.exposureDiagnostics,
+                            Modifier.align(Alignment.TopEnd).padding(10.dp))
+                    }
                     Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
-                        val hint = captureMessage ?: Composition.guidance(scene, roll, mode, analysisAvailable = false)
+                        val hint = captureMessage ?: Composition.guidance(scene, roll, mode,
+                            analysisAvailable = analysisAvailable)
                         Text(hint, color = Color.White, fontSize = 13.sp,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .75f))
                                 .padding(horizontal = 14.dp, vertical = 8.dp))
@@ -239,6 +249,21 @@ internal fun CameraScreen(
                 }
             }
             FilmPicker(film) { film = it; operations.clearCaptureMessage() }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Exposure estimate", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    Text("Sampled preview luma · not RAW clipping", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 10.sp)
+                }
+                Switch(checked = diagnosticsEnabled, enabled = analysisAvailable && ready && !busy, onCheckedChange = {
+                    diagnosticsEnabled = it
+                    cameraPreferences.edit().putBoolean("exposure_diagnostics_enabled", it).apply()
+                }, modifier = Modifier.semantics { contentDescription = "Show exposure estimate histogram" })
+            }
+            if (!analysisAvailable && ready) {
+                Text("Preview analysis unavailable on this camera", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp)
+            }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Guide", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
