@@ -33,4 +33,6 @@ The camera assistant uses frame luminance, a heuristic for concentrated image de
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.
 
+Aperture checks for interrupted work on startup. It removes its recognized temporary files and orphan edit files after 24 hours. It also checks for old pending JPEG exports in Pictures/Aperture and only removes rows with verified app ownership and pending status.
+
 Camera luma fixtures cover the four rotations, front-camera mirroring, and cropped, padded camera buffers. Preview, tap-to-focus, and capture alignment still need verification on physical cameras across those rotations.
