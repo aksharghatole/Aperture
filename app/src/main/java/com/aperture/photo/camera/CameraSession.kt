@@ -34,6 +34,7 @@ internal class CameraSession(
     private val onZoom: (CameraZoom) -> Unit,
     private val onExposure: (ExposureCompensation?) -> Unit,
     private val onFocus: (FocusFeedback?) -> Unit,
+    private val onFlash: (CameraFlashState?) -> Unit,
     private val onError: (String) -> Unit
 ) {
     private val main = ContextCompat.getMainExecutor(view.context)
@@ -54,6 +55,8 @@ internal class CameraSession(
     private var zoomObserver: Observer<ZoomState>? = null
     private var resetExposureOnBind = false
     private var exposureRequestGeneration = 0
+    private var flashRequestGeneration = 0
+    private var flashMode = CameraFlashMode.OFF
     private val focusFeedback = FocusFeedbackTracker()
     private var preview: Preview? = null
     private var capture: ImageCapture? = null
@@ -127,6 +130,7 @@ internal class CameraSession(
                 camera = available.bindToLifecycle(owner, selector, group.addUseCase(analysisUseCase).build())
                 observeZoom()
                 reportExposure(camera)
+                reportFlash(camera)
                 analysis = analysisUseCase
                 analysisUseCase.setAnalyzer(analyzer, sceneAnalyzer)
             } catch (_: IllegalArgumentException) {
@@ -138,6 +142,7 @@ internal class CameraSession(
                 camera = available.bindToLifecycle(owner, selector, basicGroup)
                 observeZoom()
                 reportExposure(camera)
+                reportFlash(camera)
             }
             if (view.previewStreamState.value == PreviewView.StreamState.STREAMING) {
                 applyFilm()
@@ -248,6 +253,46 @@ internal class CameraSession(
         }
     }
 
+    private fun reportFlash(current: Camera?) {
+        if (current?.cameraInfo?.hasFlashUnit() == true) onFlash(CameraFlashState(flashMode))
+        else {
+            flashMode = CameraFlashMode.OFF
+            onFlash(null)
+        }
+    }
+
+    fun setFlashMode(target: CameraFlashMode) {
+        val current = camera
+        val imageCapture = capture
+        if (closed || current == null || imageCapture == null || !current.cameraInfo.hasFlashUnit()) {
+            onFlash(null)
+            return
+        }
+        val generation = ++flashRequestGeneration
+        val future = try {
+            current.cameraControl.enableTorch(target == CameraFlashMode.TORCH)
+        } catch (_: Exception) {
+            onFlash(CameraFlashState(flashMode, error = "Flash control failed. Try another mode."))
+            return
+        }
+        onFlash(CameraFlashState(flashMode, updating = true))
+        future.addListener({
+            val succeeded = runCatching { future.get(); true }.getOrDefault(false)
+            if (generation != flashRequestGeneration || camera !== current) return@addListener
+            if (!succeeded) {
+                onFlash(CameraFlashState(flashMode, error = "Flash control failed. Try another mode."))
+                return@addListener
+            }
+            imageCapture.flashMode = when (target) {
+                CameraFlashMode.AUTO -> ImageCapture.FLASH_MODE_AUTO
+                CameraFlashMode.ON -> ImageCapture.FLASH_MODE_ON
+                CameraFlashMode.OFF, CameraFlashMode.TORCH -> ImageCapture.FLASH_MODE_OFF
+            }
+            flashMode = target
+            onFlash(CameraFlashState(target))
+        }, main)
+    }
+
     fun setFilm(value: Film) {
         if (film == value) return
         film = value
@@ -291,6 +336,10 @@ internal class CameraSession(
     }
 
     private fun unbind() {
+        flashRequestGeneration++
+        camera?.cameraControl?.let { control -> runCatching { control.enableTorch(false) } }
+        flashMode = CameraFlashMode.OFF
+        onFlash(null)
         focusFeedback.clear()
         onFocus(null)
         exposureRequestGeneration++

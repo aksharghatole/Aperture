@@ -6,6 +6,7 @@
 - Added an opt-in live camera luma histogram and sampled-preview shadow/highlight estimates, capability-gated on frame analysis.
 - Added capability-gated tap autofocus with a positioned progress/result reticle and stale request cancellation.
 - Added an optional cancellable 3- or 10-second shutter countdown with snapshotted film/camera settings and haptic ticks.
+- Added capability-gated still flash Off/Auto/On and torch modes; torch is disabled on camera rebind and shutdown.
 - Added pinch-to-zoom and accessible zoom presets limited to each camera's observed range.
 - Added an optional RGB channel histogram with per-channel near-black and near-white estimates and accessible text summaries.
 - Added import-date and EXIF capture-date sorting options to the library.

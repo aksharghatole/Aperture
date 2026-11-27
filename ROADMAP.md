@@ -11,6 +11,7 @@
 - [x] Add an opt-in live camera luma histogram and preview-only shadow/highlight warnings.
 - [x] Add capability-gated tap autofocus feedback with an accessible viewfinder reticle.
 - [x] Add off, 3-second, and 10-second shutter timers with cancellation and optional haptic ticks.
+- [x] Add flash Off/Auto/On and continuous torch controls when supported by the active camera.
 
 Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×40 luma sample at the analyzer's bounded ~5 fps cadence. Thresholds use sampled 8-bit preview luma: deep shadows at or below 8, bright pixels at or above 247, and a warning when at least 5% of samples meet either threshold. These estimates are not RAW sensor clipping measurements.
 
