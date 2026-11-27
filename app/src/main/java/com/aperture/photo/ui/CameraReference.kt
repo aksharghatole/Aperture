@@ -1,79 +1,101 @@
 package com.aperture.photo.ui
 
-import android.graphics.ImageDecoder
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import com.aperture.photo.imaging.PhotoRenderer
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.aperture.photo.camera.ReferenceAlignment
 import kotlin.math.roundToInt
 
-internal data class CameraReference(val image: ImageBitmap?, val opacity: Float, val open: () -> Unit)
-
 @Composable
-internal fun rememberCameraReference(): CameraReference {
-    val resolver = LocalContext.current.contentResolver
-    var image by remember { mutableStateOf<ImageBitmap?>(null) }
-    var opacity by remember { mutableFloatStateOf(.35f) }
-    var request by remember { mutableStateOf<Uri?>(null) }
-    var open by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf(false) }
+internal fun CameraReferenceDialog(
+    reference: CameraReferenceState,
+    canAlign: Boolean,
+    dismiss: () -> Unit,
+    align: () -> Unit
+) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) {
-            error = false
-            request = uri
-        }
+        uri?.let(reference::load)
     }
-
-    LaunchedEffect(request) {
-        val uri = request ?: return@LaunchedEffect
-        val decoded = withContext(Dispatchers.IO) {
-            runCatching {
-                PhotoRenderer.decode(ImageDecoder.createSource(resolver, uri), 1280).asImageBitmap()
-            }.getOrNull()
-        }
-        if (decoded != null) image = decoded
-        error = decoded == null
-        request = null
-    }
-
-    if (open) {
-        AlertDialog(
-            onDismissRequest = { open = false },
-            title = { Text("Reference photo") },
-            text = {
-                Column {
-                    when {
-                        request != null -> Text("Loading reference…")
-                        error -> Text("Could not open that image.")
-                        image == null -> Text("Choose a photo to overlay on the viewfinder.")
-                    }
-                    if (image != null) {
-                        Text("Opacity ${(opacity * 100).roundToInt()}%")
-                        Slider(value = opacity, onValueChange = { opacity = it }, valueRange = 0.1f..0.8f)
-                        TextButton(onClick = { image = null; request = null; error = false; open = false }) {
-                            Text("Remove reference")
-                        }
-                    }
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Reference photo") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                when {
+                    reference.loading -> Text("Loading reference…")
+                    reference.error != null -> Text(reference.error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                    reference.image == null -> Text("Choose a photo to overlay on the viewfinder.")
                 }
-            },
-            confirmButton = { TextButton(onClick = { open = false }) { Text("Done") } },
-            dismissButton = {
-                TextButton(onClick = { picker.launch("image/*") }, enabled = request == null) {
-                    Text(if (image == null) "Choose photo" else "Replace photo")
+                if (reference.image != null) {
+                    val current = reference.alignment
+                    ReferenceSlider("Opacity", reference.opacity, 0.1f..0.8f) { reference.opacity = it }
+                    ReferenceSlider("Scale", current.scale, ReferenceAlignment.ScaleRange) {
+                        reference.alignment = ReferenceAlignment.of(reference.alignment.x, reference.alignment.y, it)
+                    }
+                    ReferenceSlider("Horizontal position", current.x, ReferenceAlignment.OffsetRange) {
+                        reference.alignment = ReferenceAlignment.of(it, reference.alignment.y, reference.alignment.scale)
+                    }
+                    ReferenceSlider("Vertical position", current.y, ReferenceAlignment.OffsetRange) {
+                        reference.alignment = ReferenceAlignment.of(reference.alignment.x, it, reference.alignment.scale)
+                    }
+                    TextButton(onClick = align, enabled = canAlign && !reference.loading) {
+                        Text("Align in viewfinder")
+                    }
+                    TextButton(onClick = { reference.alignment = ReferenceAlignment.Centered }) {
+                        Text("Reset alignment")
+                    }
+                    TextButton(onClick = {
+                        reference.remove()
+                        dismiss()
+                    }) { Text("Remove reference") }
                 }
             }
-        )
+        },
+        confirmButton = { TextButton(onClick = dismiss) { Text("Done") } },
+        dismissButton = {
+            TextButton(onClick = { picker.launch("image/*") }, enabled = !reference.loading) {
+                Text(if (reference.image == null) "Choose photo" else "Replace photo")
+            }
+        }
+    )
+}
+
+@Composable
+private fun ReferenceSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, change: (Float) -> Unit) {
+    Text("$label ${(value * 100).roundToInt()}%")
+    Slider(value = value, onValueChange = change, valueRange = range,
+        modifier = Modifier.semantics { contentDescription = label })
+}
+
+@Composable
+internal fun CameraReferenceOverlay(
+    image: ImageBitmap,
+    alignment: ReferenceAlignment,
+    opacity: Float,
+    modifier: Modifier = Modifier
+) {
+    val painter = remember(image) { BitmapPainter(image) }
+    Canvas(modifier) {
+        val bounds = alignment.bounds(image.width, image.height, size.width, size.height)
+        translate(bounds.left, bounds.top) {
+            with(painter) { draw(Size(bounds.width, bounds.height), alpha = opacity) }
+        }
     }
-    return CameraReference(image, opacity) { open = true }
 }

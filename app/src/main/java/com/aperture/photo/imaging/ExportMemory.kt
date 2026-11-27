@@ -8,7 +8,8 @@ internal class ExportMemoryException(val suggestedMaxEdge: Int?) :
     IOException("Estimated image buffers exceed the available export budget")
 
 internal object ExportMemory {
-    private const val WorkspaceBytes = 16L * 1024 * 1024
+    private const val BaseWorkspaceBytes = 2L * 1024 * 1024
+    private const val MaxWorkspaceBytes = 16L * 1024 * 1024
 
     fun budget(maxHeap: Long, usedHeap: Long): Long =
         minOf(maxHeap / 3L * 2L, (maxHeap - usedHeap).coerceAtLeast(0L))
@@ -40,9 +41,11 @@ internal object ExportMemory {
         val crop = if (sideways) recipe.crop.pixels(sampledHeight, sampledWidth)
             else recipe.crop.pixels(sampledWidth, sampledHeight)
 
-        // Source decoders can return 8-byte wide-gamut pixels. The render target uses ARGB_8888.
-        val bytes = sampledWidth.toDouble() * sampledHeight * 8 +
-            crop.width.toDouble() * crop.height * 4 + WorkspaceBytes
+        // Decoders can return 8-byte wide-gamut pixels. The render target uses ARGB_8888.
+        val sampledPixels = sampledWidth.toDouble() * sampledHeight
+        // Reserve extra codec and renderer workspace in proportion to the sampled image.
+        val workspace = (BaseWorkspaceBytes + sampledPixels * 4).coerceAtMost(MaxWorkspaceBytes.toDouble())
+        val bytes = sampledPixels * 8 + crop.width.toDouble() * crop.height * 4 + workspace
         return bytes.toLong()
     }
 }

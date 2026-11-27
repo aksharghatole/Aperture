@@ -23,7 +23,7 @@ GitHub Actions runs the build checks and uploads an installable debug APK. With 
 4. Export a full-resolution JPEG to `Pictures/Aperture`. The captured or imported original stays in the app library. Darkroom keeps up to 40 edit states for undo and redo. Use **Save edits** to restore that history when reopening the photo. Toggle **Histogram** to see the edited preview’s luminance distribution and sampled near-black and near-white percentages. Use **Crop** to select an aspect ratio and drag the frame into position before applying. Open **Curves** to map black, midtone, and white levels for RGB or an individual channel. If saved edits cannot be opened, Darkroom preserves the edit file and offers an original export. Darkroom asks before leaving an unsaved edit history. Returning to Library shows the saved version of each photo.
 5. To export several photos, tap **Select** in Library, pick the photos, and tap **Export**. Batch export uses each photo’s saved edits. Failed and unprocessed photos stay selected for retry.
 
-Use **Reference** to pick an image and adjust its opacity. The overlay is center-cropped to the viewfinder and stays in the camera session. It guides framing visually and is excluded from saved photos.
+Use **Reference** to pick an image and adjust its opacity, scale, and position. Choose **Align in viewfinder** to drag or pinch the overlay over the live preview. Tap **Done** to resume normal focus and zoom gestures. The overlay and its settings persist through rotation and trips to Library during the camera session. Captures contain only the camera image.
 
 In Darkroom, toggle **Before** to compare the current edits with the original tones or the film look chosen at capture. Both views use the current crop and rotation. Saving and exporting use the current edits in either view.
 
@@ -40,6 +40,12 @@ Aperture uses Android’s image decoder for still photos, including JPEG, PNG, a
 ## Device verification
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.
+
+For reference alignment:
+
+- Select a reference with recognizable edges, adjust its opacity, and drag and pinch it in the viewfinder. Exit alignment and confirm that tap focus and camera pinch zoom respond again.
+- Rotate to landscape and back, then open Library and return. Check that the chosen image, opacity, and relative alignment are retained.
+- With the overlay visible, take a photo and export it from Darkroom. Check that both images contain only the captured scene. Reset the alignment, then remove the reference and verify that it stays cleared after navigating to Library and back.
 
 Aperture checks for interrupted work on startup. It removes its recognized temporary files and orphan edit files after 24 hours. It also checks for old pending JPEG exports in Pictures/Aperture and only removes rows with verified app ownership and pending status.
 

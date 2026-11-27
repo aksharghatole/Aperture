@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModelProvider
+import com.aperture.photo.ui.CameraReferenceState
 import com.aperture.photo.ui.PhotoOperations
 import com.aperture.photo.ui.CameraScreen
 import com.aperture.photo.ui.EditorScreen
@@ -58,6 +59,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val operations = ViewModelProvider(this)[PhotoOperations::class.java]
+        val reference = ViewModelProvider(this)[CameraReferenceState::class.java]
         setContent {
             val library = operations.library
             LaunchedEffect(library) {
@@ -95,7 +97,7 @@ class MainActivity : ComponentActivity() {
                                 selectedName = it.file.name
                             }
                             else -> screenState.SaveableStateProvider("camera") {
-                                CameraScreen(operations, photos.firstOrNull(), { volumeShutter = it }) {
+                                CameraScreen(operations, reference, photos.firstOrNull(), { volumeShutter = it }) {
                                     if (!operations.captureBusy) {
                                         operations.libraryChanged()
                                         inLibrary = true
