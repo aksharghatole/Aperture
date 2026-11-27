@@ -34,7 +34,7 @@ class PhotoWorkflowTest {
         val fixture = Bitmap.createBitmap(960, 640, Bitmap.Config.ARGB_8888)
         try {
             input.outputStream().use { assertTrue(fixture.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-            val budget = { 18L * 1024 * 1024 }
+            val budget = { 8L * 1024 * 1024 }
             val guarded = assertThrows(ExportMemoryException::class.java) {
                 PhotoRenderer.decodeForExport(input, Recipe(), null, budget)
             }

@@ -37,4 +37,14 @@ class ExportMemoryTest {
         assertNull(failure.suggestedMaxEdge)
         assertEquals(80L, ExportMemory.budget(400L, 320L))
     }
+
+    @Test fun smallImagesCanExportWithLimitedHeapHeadroom() {
+        val budget = ExportMemory.budget(24L * 1024 * 1024, 16L * 1024 * 1024)
+        ExportMemory.check(320, 240, Recipe(), null, budget)
+        val larger = assertThrows(ExportMemoryException::class.java) {
+            ExportMemory.check(960, 640, Recipe(), null, budget)
+        }
+        val edge = checkNotNull(larger.suggestedMaxEdge)
+        ExportMemory.check(960, 640, Recipe(), edge, budget)
+    }
 }
