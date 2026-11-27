@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check export memory before decoding and offer an explicit smaller JPEG when needed.
 - Added regression fixtures for cropped, rotated, and mirrored camera luma sampling.
 - Added Master RGB and individual red, green, and blue curves with live previews.
 - Clear frame-analysis guidance after invalid frames or 800 ms without a fresh reading.

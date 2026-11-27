@@ -142,8 +142,8 @@ class PhotoLibrary(private val context: Context) {
     fun exportSavedEdits(photo: Photo): Uri =
         export(photo, loadEdits(photo)?.current ?: Recipe(photo.film))
 
-    fun export(photo: Photo, recipe: Recipe): Uri {
-        val source = PhotoRenderer.decode(photo.file)
+    fun export(photo: Photo, recipe: Recipe, maxEdge: Int? = null): Uri {
+        val source = PhotoRenderer.decodeForExport(photo.file, recipe, maxEdge)
         val rendered = try {
             PhotoRenderer.render(source, recipe)
         } finally {
