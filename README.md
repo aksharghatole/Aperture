@@ -25,6 +25,8 @@ GitHub Actions runs the build checks and uploads an installable debug APK. With 
 
 Use **Reference** to pick an image and adjust its opacity, scale, and position. Choose **Align in viewfinder** to drag or pinch the overlay over the live preview. Tap **Done** to resume normal focus and zoom gestures. The overlay and its settings persist through rotation and trips to Library during the camera session. Captures contain only the camera image.
 
+In Darkroom, toggle **Before** to compare the current edits with the original tones or the film look chosen at capture. Both views use the current crop and rotation. Saving and exporting use the current edits in either view.
+
 Portrait mode uses Android’s offline frontal face detector. It shows an eye-position cue after two nearby detections of a single confident face. Groups, profiles, small faces, and devices without working detection can use the upper guide manually.
 
 The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device. If camera analysis stalls or returns an invalid frame, Aperture drops its scene cues and keeps manual guides available.

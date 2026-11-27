@@ -48,6 +48,7 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 - Delete unwanted local photos and their saved Darkroom edit histories with confirmation.
 - Undo and redo for Darkroom edits, with an option to save and reopen each photo’s edit history.
 - Live luminance histogram for the edited preview.
+- Before and after comparison with matching crop and rotation and the original capture look as the baseline.
 - Master RGB and per-channel curves with black, midtone, and white points.
 - Aspect-ratio crop presets with drag positioning and non-destructive export.
 - Batch export for selected photos using each saved Darkroom edit.

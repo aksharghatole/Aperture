@@ -28,3 +28,7 @@ data class Recipe(
     val highlights: Float = 0f,
     val curves: RgbCurves = RgbCurves()
 )
+
+/** Use the capture look and keep the edited preview's geometry for a like-for-like comparison. */
+internal fun Recipe.comparisonBaseline(captureFilm: Film) =
+    Recipe(film = captureFilm, quarterTurns = quarterTurns, crop = crop)
