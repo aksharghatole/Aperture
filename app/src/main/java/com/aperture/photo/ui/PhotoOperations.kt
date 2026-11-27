@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.aperture.photo.imaging.ExportMemoryException
 import com.aperture.photo.imaging.ExportReceipt
 import com.aperture.photo.imaging.Film
+import com.aperture.photo.imaging.ImageInputException
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
@@ -97,6 +98,8 @@ internal class PhotoOperations(application: Application) : AndroidViewModel(appl
                     reduced = maxEdge != null, message = null)
             } catch (failure: CancellationException) {
                 throw failure
+            } catch (failure: ImageInputException) {
+                started.copy(running = false, message = failure.message)
             } catch (failure: ExportMemoryException) {
                 started.copy(running = false, smallerEdge = failure.suggestedMaxEdge,
                     message = if (failure.suggestedMaxEdge == null) "There is not enough memory to export this photo." else null)
