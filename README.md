@@ -27,6 +27,8 @@ Use **Reference** to pick an image and adjust its opacity. The overlay is center
 
 In Darkroom, toggle **Before** to compare the current edits with the original tones or the film look chosen at capture. Both views use the current crop and rotation. Saving and exporting use the current edits in either view.
 
+Pinch, double-tap, or use the zoom buttons to inspect a photo in Darkroom. Drag to pan while zoomed. **Fit** restores the full edited frame. Before and After share the same inspection position. Changing the crop or rotation returns to Fit. Inspection magnifies the preview, which is decoded at up to 1,400 pixels on its longest edge. Export uses the original photo.
+
 Portrait mode uses Android’s offline frontal face detector. It shows an eye-position cue after two nearby detections of a single confident face. Groups, profiles, small faces, and devices without working detection can use the upper guide manually.
 
 The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device. If camera analysis stalls or returns an invalid frame, Aperture drops its scene cues and keeps manual guides available.
