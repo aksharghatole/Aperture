@@ -3,6 +3,7 @@ package com.aperture.photo
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.aperture.photo.imaging.CropWindow
@@ -13,6 +14,7 @@ import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.imaging.ToneCurve
+import com.aperture.photo.imaging.comparisonBaseline
 import com.aperture.photo.library.PhotoLibrary
 import com.aperture.photo.library.RecoveryPolicy
 import com.aperture.photo.library.SavedEditException
@@ -28,6 +30,53 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class PhotoWorkflowTest {
+    @Test fun beforeAndAfterShareFramingOnImportedAndCapturedPhotos() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val library = PhotoLibrary(context)
+        val input = File.createTempFile("comparison-test", ".jpg", context.cacheDir)
+        val pending = library.beginCapture()
+        val fixture = Bitmap.createBitmap(64, 32, Bitmap.Config.ARGB_8888)
+        try {
+            fixture.eraseColor(Color.rgb(96, 128, 160))
+            input.outputStream().use { assertTrue(fixture.compress(Bitmap.CompressFormat.JPEG, 100, it)) }
+            input.copyTo(pending, overwrite = true)
+            val imported = library.import(Uri.fromFile(input))
+            try {
+                val captured = library.commitCapture(pending, Film.SILVER)
+                try {
+                    val edit = Recipe(exposure = 1f, quarterTurns = 1, crop = CropWindow(0f, .25f, .5f, .75f))
+                    for (photo in listOf(imported, captured)) {
+                        val source = PhotoRenderer.decode(photo.file, 1400)
+                        val before = PhotoRenderer.render(source, edit.comparisonBaseline(photo.film))
+                        val after = PhotoRenderer.render(source, edit)
+                        try {
+                            assertEquals(16, before.width)
+                            assertEquals(32, before.height)
+                            assertEquals(before.width, after.width)
+                            assertEquals(before.height, after.height)
+                            val center = before.getPixel(8, 16)
+                            assertTrue(center != after.getPixel(8, 16))
+                            if (photo == captured) assertEquals(Color.red(center), Color.blue(center))
+                            else assertTrue(Color.red(center) < Color.blue(center))
+                        } finally {
+                            before.recycle()
+                            after.recycle()
+                            source.recycle()
+                        }
+                    }
+                } finally {
+                    library.delete(captured)
+                }
+            } finally {
+                library.delete(imported)
+            }
+        } finally {
+            fixture.recycle()
+            library.discardCapture(pending)
+            input.delete()
+        }
+    }
+
     @Test fun decoderRejectsOversizedBuffersAndAppliesOptInSampling() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val input = File.createTempFile("export-fixture-", ".png", context.cacheDir)

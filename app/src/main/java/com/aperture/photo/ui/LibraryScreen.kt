@@ -40,6 +40,8 @@ import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
+import com.aperture.photo.imaging.comparisonBaseline
+import com.aperture.photo.imaging.Film
 import com.aperture.photo.library.PhotoInformation
 import com.aperture.photo.library.readPhotoInformation
 import com.aperture.photo.library.Photo
@@ -272,8 +274,16 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
     val source = loaded?.getOrNull()
     var curveDraft by remember(photo) { mutableStateOf<RgbCurves?>(null) }
     val previewRecipe = if (savedEditProblem != null) Recipe() else curveDraft?.let { recipe.copy(curves = it) } ?: recipe
-    val rendered by renderedPhoto(source, previewRecipe)
+    val rendered by key(previewRecipe.crop, previewRecipe.quarterTurns) { renderedPhoto(source, previewRecipe) }
     val preview = rendered?.getOrNull()
+    var showBefore by rememberSaveable(photo.file.name) { mutableStateOf(false) }
+    var compareRequested by remember(photo) { mutableStateOf(false) }
+    val baseline = previewRecipe.comparisonBaseline(photo.film)
+    val before = when {
+        baseline == Recipe() -> loaded
+        compareRequested || showBefore -> key(baseline) { renderedPhoto(source, baseline).value }
+        else -> null
+    }
     var showHistogram by rememberSaveable { mutableStateOf(false) }
     val currentExport = operations.editorExport?.takeIf { it.photo == photo }
     val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
@@ -466,14 +476,35 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             }
         }
 
+        if (editsLoaded && savedEditProblem == null) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = showBefore, enabled = showBefore || preview != null, onClick = {
+                    compareRequested = true
+                    showBefore = !showBefore
+                }, label = { Text("Before") })
+                val label = when {
+                    !showBefore -> "After · current edits"
+                    photo.film == Film.CLEAN -> "Before · original tones"
+                    else -> "Before · ${photo.film.title} capture look"
+                }
+                Text(label, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
         Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-            val image = preview
+            val comparing = showBefore && editsLoaded && savedEditProblem == null
+            val displayed = if (comparing) before else rendered
+            val image = displayed?.getOrNull()
             when {
-                image != null -> Image(image.asImageBitmap(), "Edited photo", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                image != null -> Image(image.asImageBitmap(), if (comparing) "Before edits" else "Edited photo",
+                    Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 loaded?.isFailure == true -> Text("This photo could not be opened.", color = MaterialTheme.colorScheme.error)
-                rendered?.isFailure == true -> Text("This edit could not be previewed.", color = MaterialTheme.colorScheme.error)
-                source == null -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                displayed?.isFailure == true -> Text(
+                    if (comparing) "Before preview unavailable." else "This edit could not be previewed.",
+                    color = MaterialTheme.colorScheme.error
+                )
                 else -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
             }
             if (image != null && showHistogram) {
