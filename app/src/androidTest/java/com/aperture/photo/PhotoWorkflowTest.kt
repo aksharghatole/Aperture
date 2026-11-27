@@ -143,12 +143,24 @@ class PhotoWorkflowTest {
         try {
             assertTrue(library.all().contains(photo))
             assertNull(library.loadEdits(photo))
+            val originalThumbnail = library.thumbnail(photo)
+            try {
+                assertTrue(originalThumbnail.width > originalThumbnail.height)
+            } finally {
+                originalThumbnail.recycle()
+            }
             val initial = Recipe(photo.film)
             val rotated = initial.copy(quarterTurns = 1, crop = CropWindow(.25f, .125f, .75f, .875f))
             val adjusted = rotated.copy(exposure = .5f)
             library.saveEdits(photo, EditHistory(initial).commit(rotated).commit(adjusted).undo())
             val reloaded = checkNotNull(PhotoLibrary(context).loadEdits(photo))
             assertEquals(rotated, reloaded.current)
+            val editedThumbnail = library.thumbnail(photo)
+            try {
+                assertTrue(editedThumbnail.height > editedThumbnail.width)
+            } finally {
+                editedThumbnail.recycle()
+            }
             assertEquals(initial, reloaded.undo().current)
             assertEquals(adjusted, reloaded.redo().current)
             assertEquals(listOf(photo), library.all().filter { it.file.name.startsWith(photo.file.name) })
@@ -165,6 +177,14 @@ class PhotoWorkflowTest {
                     } finally {
                         output.recycle()
                     }
+                }
+                val sidecar = File(photo.file.parentFile, "${photo.file.name}.edits")
+                sidecar.writeText("invalid")
+                val fallback = library.thumbnail(photo)
+                try {
+                    assertTrue(fallback.width > fallback.height)
+                } finally {
+                    fallback.recycle()
                 }
                 assertArrayEquals(bytes, photo.file.readBytes())
             } finally {

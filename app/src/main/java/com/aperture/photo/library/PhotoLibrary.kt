@@ -2,6 +2,7 @@ package com.aperture.photo.library
 
 import android.content.ContentValues
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
 import android.util.AtomicFile
@@ -122,6 +123,20 @@ class PhotoLibrary(private val context: Context) {
 
     private companion object {
         val editFileLock = Any()
+    }
+
+    internal fun thumbnail(photo: Photo): Bitmap {
+        val recipe = try {
+            loadEdits(photo)?.current
+        } catch (_: IOException) {
+            null
+        } ?: Recipe(photo.film)
+        val source = PhotoRenderer.decode(photo.file, 320)
+        return try {
+            PhotoRenderer.render(source, recipe)
+        } finally {
+            source.recycle()
+        }
     }
 
     fun exportSavedEdits(photo: Photo): Uri =
