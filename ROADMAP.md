@@ -1,5 +1,6 @@
 # Roadmap
 
+- [x] Add switchable composition guides independent of shooting mode.
 - [x] Add an opt-in volume-key shutter while the camera is ready.
 
 ## 0.1 · Camera and darkroom foundations
