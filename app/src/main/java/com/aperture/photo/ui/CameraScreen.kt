@@ -62,6 +62,7 @@ import com.aperture.photo.camera.Scene
 import com.aperture.photo.camera.SceneReading
 import kotlinx.coroutines.delay
 import com.aperture.photo.camera.ShootingMode
+import com.aperture.photo.camera.VolumeShutterPolicy
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.library.Photo
 import kotlin.math.abs
@@ -69,7 +70,12 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-internal fun CameraScreen(operations: PhotoOperations, latest: Photo?, openLibrary: () -> Unit) {
+internal fun CameraScreen(
+    operations: PhotoOperations,
+    latest: Photo?,
+    onVolumeShutterChanged: (((() -> Boolean)?) -> Unit),
+    openLibrary: () -> Unit
+) {
     val library = operations.library
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -77,6 +83,10 @@ internal fun CameraScreen(operations: PhotoOperations, latest: Photo?, openLibra
     var granted by remember { mutableStateOf(cameraPermission(context)) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var film by rememberSaveable { mutableStateOf(Film.CLEAN) }
+    val cameraPreferences = remember(context) { context.getSharedPreferences("camera", Context.MODE_PRIVATE) }
+    var volumeShutterEnabled by remember {
+        mutableStateOf(cameraPreferences.getBoolean("volume_shutter_enabled", false))
+    }
     var mode by rememberSaveable { mutableStateOf(ShootingMode.STREET) }
     val reference = rememberCameraReference()
     var reading by remember { mutableStateOf<SceneReading?>(null) }
@@ -90,6 +100,18 @@ internal fun CameraScreen(operations: PhotoOperations, latest: Photo?, openLibra
     var retry by remember { mutableIntStateOf(0) }
     var session by remember { mutableStateOf<CameraSession?>(null) }
     val roll = if (granted) deviceRoll() else null
+
+    val dispatchVolumeShutter by rememberUpdatedState {
+        if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy, session != null, 0)) false
+        else session?.let { active ->
+            operations.capture(film, active::takePhoto)
+            true
+        } ?: false
+    }
+    DisposableEffect(onVolumeShutterChanged) {
+        onVolumeShutterChanged { dispatchVolumeShutter() }
+        onDispose { onVolumeShutterChanged(null) }
+    }
 
     LaunchedEffect(reading) {
         val accepted = reading ?: return@LaunchedEffect
@@ -197,6 +219,12 @@ internal fun CameraScreen(operations: PhotoOperations, latest: Photo?, openLibra
                 }
             }
             FilmPicker(film) { film = it; operations.clearCaptureMessage() }
+            TextButton(onClick = {
+                volumeShutterEnabled = !volumeShutterEnabled
+                cameraPreferences.edit().putBoolean("volume_shutter_enabled", volumeShutterEnabled).apply()
+            }) {
+                Text(if (volumeShutterEnabled) "Volume shutter on" else "Volume shutter off", fontSize = 12.sp)
+            }
         }
 
         Row(Modifier.fillMaxWidth().height(90.dp), verticalAlignment = Alignment.CenterVertically,

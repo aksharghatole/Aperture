@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Add an opt-in volume-key shutter while the camera is ready.
+
 ## 0.1 · Camera and darkroom foundations
 
 - CameraX preview, tap-to-focus, lens switching, JPEG capture, and permission/error handling.

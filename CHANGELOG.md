@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added an opt-in volume-key shutter shortcut, disabled by default and active only while the camera can capture.
 - Reject recognized animations on import and fill transparent pixels with white for JPEG export.
 - Retain capture outcomes, single exports, and batch progress across Activity recreation.
 - Check export memory before decoding and offer an explicit smaller JPEG when needed.
