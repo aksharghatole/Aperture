@@ -14,6 +14,7 @@ import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.imaging.ToneCurve
 import com.aperture.photo.library.PhotoLibrary
+import com.aperture.photo.library.RecoveryPolicy
 import com.aperture.photo.library.SavedEditException
 import com.aperture.photo.library.SavedEditProblem
 import org.junit.Assert.assertArrayEquals
@@ -48,6 +49,37 @@ class PhotoWorkflowTest {
         } finally {
             fixture.recycle()
             input.delete()
+        }
+    }
+
+    @Test fun recoveryRemovesStaleArtifactsButKeepsActiveAndOriginalFiles() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val library = PhotoLibrary(context)
+        val now = System.currentTimeMillis()
+        val old = now - RecoveryPolicy.MaxAgeMillis - 10_000L
+        val stale = File.createTempFile("capture-", ".jpg", context.cacheDir)
+        val recent = File.createTempFile("capture-", ".jpg", context.cacheDir)
+        val active = library.beginCapture()
+        val original = library.commitCapture(library.beginCapture().apply { writeText("original") }, Film.CLEAN)
+        val sidecar = File(original.file.parentFile, "${original.file.name}.edits")
+        val orphan = File(original.file.parentFile, original.file.name.replace("_CLEAN.photo", "_AMBER.photo.edits"))
+        try {
+            sidecar.writeText("existing edits")
+            orphan.writeText("missing original")
+            for (file in listOf(stale, active, sidecar, orphan)) assertTrue(file.setLastModified(old))
+            library.recoverInterruptedWork(now)
+            assertTrue(!stale.exists())
+            assertTrue(!orphan.exists())
+            assertTrue(recent.isFile)
+            assertTrue(active.isFile)
+            assertEquals("original", original.file.readText())
+            assertEquals("existing edits", sidecar.readText())
+        } finally {
+            stale.delete()
+            recent.delete()
+            orphan.delete()
+            library.discardCapture(active)
+            library.delete(original)
         }
     }
 
