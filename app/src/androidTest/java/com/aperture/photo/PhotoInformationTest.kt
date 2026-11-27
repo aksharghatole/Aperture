@@ -48,7 +48,9 @@ class PhotoInformationTest {
     private fun fixture(name: String): File {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val file = File(context.cacheDir, name)
-        Bitmap.createBitmap(24, 12, Bitmap.Config.ARGB_8888).compress(Bitmap.CompressFormat.JPEG, 90, file.outputStream())
+        val bitmap = Bitmap.createBitmap(24, 12, Bitmap.Config.ARGB_8888)
+        file.outputStream().use { output -> bitmap.compress(Bitmap.CompressFormat.JPEG, 90, output) }
+        bitmap.recycle()
         return file
     }
 }
