@@ -1,6 +1,7 @@
 package com.aperture.photo
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -31,6 +32,28 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
+    private var volumeShutter: (() -> Boolean)? = null
+
+    private var consumedVolumeKey: Int? = null
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode != KeyEvent.KEYCODE_VOLUME_UP && keyCode != KeyEvent.KEYCODE_VOLUME_DOWN) {
+            return super.onKeyDown(keyCode, event)
+        }
+        if (event.repeatCount == 0) {
+            if (volumeShutter?.invoke() == true) consumedVolumeKey = keyCode
+        }
+        return consumedVolumeKey == keyCode || super.onKeyDown(keyCode, event)
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == consumedVolumeKey) {
+            consumedVolumeKey = null
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -72,7 +95,7 @@ class MainActivity : ComponentActivity() {
                                 selectedName = it.file.name
                             }
                             else -> screenState.SaveableStateProvider("camera") {
-                                CameraScreen(operations, photos.firstOrNull()) {
+                                CameraScreen(operations, photos.firstOrNull(), { volumeShutter = it }) {
                                     if (!operations.captureBusy) {
                                         operations.libraryChanged()
                                         inLibrary = true
