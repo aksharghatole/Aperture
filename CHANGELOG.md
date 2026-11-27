@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
 - Added persistent camera guide choices for automatic, thirds, center, diagonal, golden-ratio, and off overlays.
 - Added an opt-in volume-key shutter shortcut, disabled by default and active only while the camera can capture.
 - Reject recognized animations on import and fill transparent pixels with white for JPEG export.

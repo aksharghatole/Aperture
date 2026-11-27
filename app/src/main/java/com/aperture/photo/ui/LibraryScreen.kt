@@ -28,6 +28,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,6 +42,7 @@ import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
+import com.aperture.photo.library.filterFavoritePhotos
 import com.aperture.photo.library.SavedEditException
 import com.aperture.photo.library.SavedEditProblem
 import kotlinx.coroutines.CancellationException
@@ -60,7 +63,10 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
     var batchMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val progress = operations.batchProgress
     val selectMode = selecting || progress != null
-    val pending = if (selectMode) photos.filter { it.file.name in selected } else emptyList()
+    val favoriteNames = remember(operations.libraryRevision) { library.favoriteNames() }
+    var favoritesOnly by rememberSaveable { mutableStateOf(false) }
+    val visiblePhotos = filterFavoritePhotos(photos, favoritesOnly, favoriteNames)
+    val pending = if (selectMode) visiblePhotos.filter { it.file.name in selected } else emptyList()
     val stopBatch = progress?.stopping == true
 
     fun cancelSelection() {
@@ -134,14 +140,21 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
                 "Processed ${progress.completed} of ${progress.total}",
                 modifier = Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = !favoritesOnly, enabled = !selectMode,
+                onClick = { favoritesOnly = false }, label = { Text("All") })
+            FilterChip(selected = favoritesOnly, enabled = !selectMode,
+                onClick = { favoritesOnly = true }, label = { Text("Favorites") })
+        }
         batchMessage?.let {
             Text(it, modifier = Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
         if (importing) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (photos.isEmpty()) {
+        if (visiblePhotos.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Take or import a photo to get started.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(if (favoritesOnly) "No favorite photos yet." else "Take or import a photo to get started.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else {
             LazyVerticalGrid(
@@ -150,7 +163,7 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 12.dp)
             ) {
-                items(photos, key = { it.file.name }) { photo ->
+                items(visiblePhotos, key = { it.file.name }) { photo ->
                     val name = photo.file.name
                     val checked = name in selected
                     val tile = Modifier.aspectRatio(1f).clip(RoundedCornerShape(12.dp))
@@ -201,6 +214,7 @@ fun PhotoThumbnail(photo: Photo, library: PhotoLibrary, modifier: Modifier, desc
 @Composable
 internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () -> Unit, onDeleted: () -> Unit) {
     val library = operations.library
+    var isFavorite by remember(photo, library) { mutableStateOf(photo.file.name in library.favoriteNames()) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val original = remember(photo) { Recipe(photo.film) }
@@ -394,6 +408,14 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         ScreenHeader("Darkroom", "Library", ::requestBack) {
             Row {
+                TextButton(enabled = !saving && !exporting && !deleting, onClick = {
+                    val next = !isFavorite
+                    runCatching { library.setFavorite(photo, next) }
+                        .onSuccess { isFavorite = next; operations.libraryChanged() }
+                        .onFailure { message = "Favorite could not be updated." }
+                }, modifier = Modifier.semantics {
+                    contentDescription = if (isFavorite) "Remove from favorites" else "Add to favorites"
+                }) { Text(if (isFavorite) "★ Saved" else "☆ Favorite") }
                 TextButton(enabled = !saving && !exporting && !deleting, onClick = { confirmDelete = true }) {
                     Text("Delete")
                 }
