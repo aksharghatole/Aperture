@@ -16,7 +16,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -37,7 +36,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +60,7 @@ import com.aperture.photo.camera.CameraFlashMode
 import com.aperture.photo.camera.CameraFlashState
 import com.aperture.photo.camera.ExposureCompensation
 import com.aperture.photo.camera.FocusFeedback
+import com.aperture.photo.camera.ReferenceAlignment
 import com.aperture.photo.camera.SelfTimer
 import com.aperture.photo.camera.SelfTimerCountdown
 import com.aperture.photo.camera.SelfTimerStep
@@ -89,6 +88,7 @@ private data class PendingShutter(
 @Composable
 internal fun CameraScreen(
     operations: PhotoOperations,
+    reference: CameraReferenceState,
     latest: Photo?,
     onVolumeShutterChanged: (((() -> Boolean)?) -> Unit),
     openLibrary: () -> Unit
@@ -114,7 +114,8 @@ internal fun CameraScreen(
     }
     var timerHaptics by remember { mutableStateOf(cameraPreferences.getBoolean("timer_haptics_enabled", false)) }
     var mode by rememberSaveable { mutableStateOf(ShootingMode.STREET) }
-    val reference = rememberCameraReference()
+    var referenceDialogOpen by rememberSaveable { mutableStateOf(false) }
+    var aligningReference by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<SceneReading?>(null) }
     val scene = reading?.scene
     var ready by remember { mutableStateOf(false) }
@@ -150,8 +151,9 @@ internal fun CameraScreen(
         else pendingShutter = PendingShutter(SelfTimer.start(++timerRequestId, timerSeconds), film, active)
     }
 
-    BackHandler(enabled = busy || pendingShutter != null) {
+    BackHandler(enabled = busy || pendingShutter != null || aligningReference) {
         if (pendingShutter != null) pendingShutter = null
+        else if (aligningReference) aligningReference = false
     }
 
     val dispatchVolumeShutter by rememberUpdatedState {
@@ -258,20 +260,31 @@ internal fun CameraScreen(
                         }
                     }
                     reference.image?.let { image ->
-                        Image(image, null, Modifier.matchParentSize(),
-                            contentScale = ContentScale.Crop, alpha = reference.opacity)
+                        CameraReferenceOverlay(image, reference.alignment, reference.opacity, Modifier.matchParentSize())
                     }
-                    GuideOverlay(scene, roll, mode, guide, Modifier.matchParentSize()
-                        .pointerInput(session) {
+                    val viewfinderGestures = if (aligningReference) {
+                        Modifier.pointerInput(reference) {
+                            detectTransformGestures { center, pan, zoomChange, _ ->
+                                val width = size.width.toFloat()
+                                val height = size.height.toFloat()
+                                if (width > 0 && height > 0) {
+                                    reference.alignment = reference.alignment.transform(
+                                        center.x / width - .5f, center.y / height - .5f,
+                                        pan.x / width, pan.y / height, zoomChange
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Modifier.pointerInput(session) {
                             detectTransformGestures { _, _, zoomChange, _ ->
                                 if (zoomChange != 1f) session?.zoomBy(zoomChange)
                             }
+                        }.pointerInput(session) {
+                            detectTapGestures { tap -> session?.focus(tap.x / size.width, tap.y / size.height) }
                         }
-                        .pointerInput(session) {
-                            detectTapGestures { tap ->
-                                session?.focus(tap.x / size.width, tap.y / size.height)
-                            }
-                        })
+                    }
+                    GuideOverlay(scene, roll, mode, guide, Modifier.matchParentSize().then(viewfinderGestures))
                     focusFeedback?.let { TapFocusOverlay(it, Modifier.matchParentSize()) }
                     if (diagnosticsEnabled && analysisAvailable) {
                         ExposureDiagnosticsOverlay(scene?.exposureDiagnostics,
@@ -287,7 +300,15 @@ internal fun CameraScreen(
                             Text("Tap shutter or Back to cancel", color = Color.White, fontSize = 11.sp)
                         }
                     }
-                    Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
+                    if (aligningReference) {
+                        Row(Modifier.align(Alignment.BottomCenter).padding(8.dp)
+                            .background(Color(0xf21b201d), RoundedCornerShape(16.dp)).padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text("Drag or pinch", fontSize = 12.sp)
+                            TextButton(onClick = { reference.alignment = ReferenceAlignment.Centered }) { Text("Reset") }
+                            TextButton(onClick = { aligningReference = false }) { Text("Done") }
+                        }
+                    } else Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         val hint = captureMessage ?: Composition.guidance(scene, roll, mode,
                             analysisAvailable = analysisAvailable)
@@ -494,7 +515,12 @@ internal fun CameraScreen(
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("Aperture", fontSize = 27.sp, fontWeight = FontWeight.Medium, letterSpacing = (-1).sp)
                 Row {
-                    if (granted) TextButton(enabled = !busy, onClick = reference.open) { Text("Reference") }
+                    if (granted) TextButton(enabled = !busy, onClick = {
+                        aligningReference = false
+                        referenceDialogOpen = true
+                    }) {
+                        Text("Reference")
+                    }
                     TextButton(enabled = !busy, onClick = openLibrary) { Text("Library") }
                 }
             }
@@ -508,6 +534,13 @@ internal fun CameraScreen(
                 viewfinder(Modifier.weight(1f).fillMaxWidth())
                 controls()
             }
+        }
+    }
+
+    if (granted && referenceDialogOpen) {
+        CameraReferenceDialog(reference, ready, dismiss = { referenceDialogOpen = false }) {
+            referenceDialogOpen = false
+            aligningReference = true
         }
     }
 

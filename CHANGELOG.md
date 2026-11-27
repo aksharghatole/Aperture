@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Retained reference overlays through rotation and Library navigation, with manual drag, pinch, sliders, and alignment reset.
+
 - Added camera exposure compensation in EV steps when supported by the active lens, with reset and failure feedback.
 - Added an opt-in live camera luma histogram and sampled-preview shadow/highlight estimates, capability-gated on frame analysis.
 - Added capability-gated tap autofocus with a positioned progress/result reticle and stale request cancellation.

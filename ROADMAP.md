@@ -26,7 +26,7 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 
 - Seven shooting modes with scene-specific framing, tilt, and low-light thresholds.
 - Directional guidance requires consecutive detail measurements.
-- Pick a reference photo and adjust its viewfinder opacity for manual alignment.
+- Pick a reference photo and adjust opacity, position, and scale. Keep the overlay through rotation and Library navigation.
 
 ## 0.3 · Portrait face framing
 
