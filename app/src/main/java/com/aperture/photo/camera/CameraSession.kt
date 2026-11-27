@@ -1,6 +1,8 @@
 package com.aperture.photo.camera
 
 import android.graphics.Paint
+import android.hardware.display.DisplayManager
+import android.os.Handler
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
@@ -30,6 +32,16 @@ internal class CameraSession(
     private val onError: (String) -> Unit
 ) {
     private val main = ContextCompat.getMainExecutor(view.context)
+    private val displays = view.context.getSystemService(DisplayManager::class.java)
+    private var boundRotation: Int? = null
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+        override fun onDisplayRemoved(displayId: Int) = Unit
+        override fun onDisplayChanged(displayId: Int) {
+            val display = view.display ?: return
+            if (display.displayId == displayId && display.rotation != boundRotation) bind()
+        }
+    }
     private val analyzer = Executors.newSingleThreadExecutor()
     private val providerFuture = ProcessCameraProvider.getInstance(view.context)
     private var provider: ProcessCameraProvider? = null
@@ -49,6 +61,7 @@ internal class CameraSession(
 
     init {
         view.addOnLayoutChangeListener(layoutListener)
+        displays?.registerDisplayListener(displayListener, Handler(view.context.mainLooper))
         view.previewStreamState.observe(owner) { state ->
             val streaming = state == PreviewView.StreamState.STREAMING && camera != null
             if (streaming) applyFilm()
@@ -68,8 +81,11 @@ internal class CameraSession(
 
     private fun bind() {
         val available = provider ?: return
+        val display = view.display ?: return
         val viewport = view.viewPort ?: return
         if (closed) return
+        val rotation = display.rotation
+        boundRotation = rotation
         onReady(false, false, false)
         unbind()
         try {
@@ -81,7 +97,6 @@ internal class CameraSession(
             }
             front = hasFront && (front || !hasBack)
             val selector = if (front) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
-            val rotation = view.display.rotation
             val previewUseCase = Preview.Builder().setTargetRotation(rotation).build()
             previewUseCase.setSurfaceProvider(view.surfaceProvider)
             val captureUseCase = ImageCapture.Builder().setTargetRotation(rotation)
@@ -90,7 +105,8 @@ internal class CameraSession(
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build()
             val sceneAnalyzer = FrameAnalyzer(front, { shootingMode }) { mode, scene ->
                 main.execute {
-                    if (!closed && analysis === analysisUseCase && mode == shootingMode) onScene(scene)
+                    if (!closed && analysis === analysisUseCase && mode == shootingMode &&
+                        view.display?.rotation == rotation) onScene(scene)
                 }
             }
             val group = UseCaseGroup.Builder().setViewPort(viewport)
@@ -185,6 +201,7 @@ internal class CameraSession(
 
     fun close() {
         closed = true
+        displays?.unregisterDisplayListener(displayListener)
         view.removeOnLayoutChangeListener(layoutListener)
         view.previewStreamState.removeObservers(owner)
         unbind()

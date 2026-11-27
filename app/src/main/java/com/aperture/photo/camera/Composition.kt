@@ -130,9 +130,16 @@ object Composition {
         }
     }
 
-    fun sensorRoll(x: Float, y: Float, z: Float): Float? {
+    /** Screen-relative roll using the display's clockwise quarter-turn index (Surface.ROTATION_*). */
+    fun sensorRoll(x: Float, y: Float, z: Float, displayQuarterTurns: Int): Float? {
         if (kotlin.math.hypot(x, y) < 4f || abs(z) > 8.7f) return null
-        val degrees = Math.toDegrees(kotlin.math.atan2(x.toDouble(), y.toDouble())).toFloat()
-        return degrees - 90f * (degrees / 90f).roundToInt()
+        val (screenX, screenY) = when (displayQuarterTurns) {
+            0 -> x to y
+            1 -> -y to x
+            2 -> -x to -y
+            3 -> y to -x
+            else -> return null
+        }
+        return Math.toDegrees(kotlin.math.atan2(screenX.toDouble(), screenY.toDouble())).toFloat()
     }
 }

@@ -92,11 +92,16 @@ class CompositionTest {
         assertEquals(FocusRegion(.8f, .4f), PortraitFraming.eyePoint(1, .9f, .2f, .4f, .1f, true))
     }
 
-    @Test fun gravityRollPrefersCardinalOrientationsAndWithholdsNearFlatReading() {
-        assertEquals(0f, Composition.sensorRoll(9.8f, 0f, 0f)!!, .001f)
-        assertEquals(0f, Composition.sensorRoll(0f, -9.8f, 0f)!!, .001f)
-        assertEquals(11.53f, Composition.sensorRoll(2f, 9.8f, 0f)!!, .02f)
-        assertNull(Composition.sensorRoll(.2f, .1f, 9.8f))
+    @Test fun gravityRollTracksDisplayAxesInEveryRotation() {
+        val tiltedAxes = listOf(2f to 9.8f, 9.8f to -2f, -2f to -9.8f, -9.8f to 2f)
+        tiltedAxes.forEachIndexed { rotation, (x, y) ->
+            assertEquals(11.53f, Composition.sensorRoll(x, y, 0f, rotation)!!, .02f)
+        }
+        assertEquals(90f, Composition.sensorRoll(9.8f, 0f, 0f, 0)!!, .001f)
+        assertEquals(0f, Composition.sensorRoll(9.8f, 0f, 0f, 1)!!, .001f)
+        assertEquals(0f, Composition.sensorRoll(0f, -9.8f, 0f, 2)!!, .001f)
+        assertNull(Composition.sensorRoll(.2f, .1f, 9.8f, 0))
+        assertNull(Composition.sensorRoll(0f, 9.8f, 0f, 4))
         assertEquals("Rotate clockwise · 12°", Composition.guidance(null, 12f, Framing.HORIZON))
     }
 }
