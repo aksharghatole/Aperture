@@ -45,6 +45,9 @@ import com.aperture.photo.library.readPhotoInformation
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
 import com.aperture.photo.library.filterFavoritePhotos
+import com.aperture.photo.library.PhotoSortMode
+import com.aperture.photo.library.CaptureTimeCache
+import com.aperture.photo.library.sortPhotos
 import com.aperture.photo.library.SavedEditException
 import com.aperture.photo.library.SavedEditProblem
 import kotlinx.coroutines.CancellationException
@@ -67,7 +70,18 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
     val selectMode = selecting || progress != null
     val favoriteNames = remember(operations.libraryRevision) { library.favoriteNames() }
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
-    val visiblePhotos = filterFavoritePhotos(photos, favoritesOnly, favoriteNames)
+    var sortMode by rememberSaveable { mutableStateOf(PhotoSortMode.IMPORT_NEWEST) }
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+    var sortedPhotos by remember { mutableStateOf(photos) }
+    LaunchedEffect(photos, sortMode) {
+        sortedPhotos = withContext(Dispatchers.IO) {
+            val captures = if (sortMode.captureDate) photos.associate { photo ->
+                photo.file.name to CaptureTimeCache.get(photo.file)
+            } else emptyMap()
+            sortPhotos(photos, sortMode, captures)
+        }
+    }
+    val visiblePhotos = filterFavoritePhotos(sortedPhotos, favoritesOnly, favoriteNames)
     val pending = if (selectMode) visiblePhotos.filter { it.file.name in selected } else emptyList()
     val stopBatch = progress?.stopping == true
 
@@ -124,6 +138,17 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
             }) {
             if (!selectMode) {
                 Row {
+                    Box {
+                        TextButton(enabled = !importing, onClick = { sortMenuExpanded = true }) { Text("Sort") }
+                        DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
+                            PhotoSortMode.entries.forEach { option ->
+                                DropdownMenuItem(text = { Text(option.label) }, onClick = {
+                                    sortMode = option
+                                    sortMenuExpanded = false
+                                })
+                            }
+                        }
+                    }
                     TextButton(enabled = !importing && photos.isNotEmpty(), onClick = {
                         selecting = true
                         batchMessage = null

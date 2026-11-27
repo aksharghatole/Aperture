@@ -4,6 +4,7 @@
 - [x] Add locally stored photo favorites and a favorites-only library filter.
 - [x] Add optional per-channel RGB histograms and clipping estimates.
 - [x] Add a read-only photo information panel in Darkroom.
+- [x] Add library sorting by import or known capture date with explicit fallback.
 - [x] Add an opt-in volume-key shutter while the camera is ready.
 
 ## 0.1 · Camera and darkroom foundations
