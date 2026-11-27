@@ -1,5 +1,6 @@
 # Roadmap
 
+- [x] Add CameraX exposure compensation with capability-gated controls.
 - [x] Add capability-gated pinch zoom and supported zoom presets.
 - [x] Add switchable composition guides independent of shooting mode.
 - [x] Add locally stored photo favorites and a favorites-only library filter.
