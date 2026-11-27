@@ -4,6 +4,7 @@
 
 - Added camera exposure compensation in EV steps when supported by the active lens, with reset and failure feedback.
 - Added an opt-in live camera luma histogram and sampled-preview shadow/highlight estimates, capability-gated on frame analysis.
+- Added capability-gated tap autofocus with a positioned progress/result reticle and stale request cancellation.
 - Added pinch-to-zoom and accessible zoom presets limited to each camera's observed range.
 - Added an optional RGB channel histogram with per-channel near-black and near-white estimates and accessible text summaries.
 - Added import-date and EXIF capture-date sorting options to the library.
