@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Check export memory before decoding and offer an explicit smaller JPEG when needed.
 - Recover stale Aperture temporary files, orphan edit files, and verified unfinished exports.
 - Added regression fixtures for cropped, rotated, and mirrored camera luma sampling.
 - Added Master RGB and individual red, green, and blue curves with live previews.

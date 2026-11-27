@@ -7,6 +7,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
+import com.aperture.photo.imaging.ExportMemoryException
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.PhotoRenderer
@@ -27,6 +28,30 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class PhotoWorkflowTest {
+    @Test fun decoderRejectsOversizedBuffersAndAppliesOptInSampling() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val input = File.createTempFile("export-fixture-", ".png", context.cacheDir)
+        val fixture = Bitmap.createBitmap(960, 640, Bitmap.Config.ARGB_8888)
+        try {
+            input.outputStream().use { assertTrue(fixture.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            val budget = { 18L * 1024 * 1024 }
+            val guarded = assertThrows(ExportMemoryException::class.java) {
+                PhotoRenderer.decodeForExport(input, Recipe(), null, budget)
+            }
+            val maxEdge = checkNotNull(guarded.suggestedMaxEdge)
+            val reduced = PhotoRenderer.decodeForExport(input, Recipe(), maxEdge, budget)
+            try {
+                assertTrue(reduced.width <= maxEdge)
+                assertTrue(reduced.height < fixture.height)
+            } finally {
+                reduced.recycle()
+            }
+        } finally {
+            fixture.recycle()
+            input.delete()
+        }
+    }
+
     @Test fun recoveryRemovesStaleArtifactsButKeepsActiveAndOriginalFiles() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val library = PhotoLibrary(context)

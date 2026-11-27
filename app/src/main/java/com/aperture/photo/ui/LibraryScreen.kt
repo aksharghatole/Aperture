@@ -35,6 +35,7 @@ import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.ExportReceipt
+import com.aperture.photo.imaging.ExportMemoryException
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
@@ -81,6 +82,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
             val failures = arrayListOf<String>()
             var exported = 0
             var attempted = 0
+            var memoryFailures = 0
             try {
                 for (photo in batch) {
                     if (stopBatch) break
@@ -90,9 +92,13 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                         selected = selected - photo.file.name
                     } catch (failure: CancellationException) {
                         throw failure
+                    } catch (_: ExportMemoryException) {
+                        memoryFailures++
+                        failures.add(photo.file.name)
                     } catch (_: Exception) {
                         failures.add(photo.file.name)
                     } catch (_: OutOfMemoryError) {
+                        memoryFailures++
                         failures.add(photo.file.name)
                     }
                     attempted++
@@ -103,6 +109,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                 batchMessage = buildString {
                     append("Exported ").append(exported).append(" of ").append(batch.size)
                     if (failures.isNotEmpty()) append(" · ").append(failures.size).append(" failed")
+                    if (memoryFailures > 0) append(" · Use Darkroom for smaller exports")
                     if (attempted < batch.size) append(" · ").append(batch.size - attempted).append(" stopped before export")
                     if (exported > 0) append(" · Pictures/Aperture")
                 }
@@ -256,6 +263,8 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
     var result by remember(photo) { mutableStateOf<ExportReceipt<android.net.Uri>?>(null) }
     val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
     val shareUri = result?.matching(exportRecipe)
+    var smallerExport by remember(photo) { mutableStateOf<Pair<Recipe, Int>?>(null) }
+    var reducedExport by remember(photo) { mutableStateOf(false) }
     var exporting by remember { mutableStateOf(false) }
     var deleting by remember(photo) { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -393,6 +402,53 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
         }
     }
 
+    fun startExport(snapshot: Recipe, maxEdge: Int? = null) {
+        if (exporting || saving || deleting) return
+        exporting = true
+        smallerExport = null
+        result = null
+        message = if (maxEdge == null) "Exporting full resolution…" else "Exporting a smaller JPEG…"
+        scope.launch {
+            try {
+                val uri = withContext(Dispatchers.IO) { library.export(photo, snapshot, maxEdge) }
+                result = ExportReceipt(snapshot, uri)
+                reducedExport = maxEdge != null
+                message = null
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: ExportMemoryException) {
+                val edge = failure.suggestedMaxEdge
+                smallerExport = edge?.let { snapshot to it }
+                message = if (edge == null) "There is not enough memory to export this photo." else null
+            } catch (_: OutOfMemoryError) {
+                if (maxEdge == null) {
+                    smallerExport = snapshot to 2048
+                    message = null
+                } else {
+                    message = "There is not enough memory to export this photo at the selected size."
+                }
+            } catch (_: Exception) {
+                message = "Export failed. Check available storage and try again."
+            } finally {
+                exporting = false
+            }
+        }
+    }
+
+    smallerExport?.let { (snapshot, edge) ->
+        AlertDialog(
+            onDismissRequest = { smallerExport = null },
+            title = { Text("Export a smaller JPEG?") },
+            text = { Text("The requested size needs more memory. You can export a JPEG up to $edge px on its longest edge.") },
+            confirmButton = {
+                TextButton(onClick = { startExport(snapshot, edge) }) { Text("Export smaller") }
+            },
+            dismissButton = {
+                TextButton(onClick = { smallerExport = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         ScreenHeader("Darkroom", "Library", ::requestBack) {
             Row {
@@ -400,25 +456,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
                     Text("Delete")
                 }
                 TextButton(enabled = editsLoaded && source != null && !exporting && !saving && !deleting, onClick = {
-                    val snapshot = exportRecipe
-                    scope.launch {
-                        exporting = true
-                        result = null
-                        message = "Exporting full resolution…"
-                        try {
-                            val uri = withContext(Dispatchers.IO) { library.export(photo, snapshot) }
-                            result = ExportReceipt(snapshot, uri)
-                            message = null
-                        } catch (failure: CancellationException) {
-                            throw failure
-                        } catch (_: Exception) {
-                            message = "Export failed. Check available storage and try again."
-                        } catch (_: OutOfMemoryError) {
-                            message = "Your device ran out of memory during export."
-                        } finally {
-                            exporting = false
-                        }
-                    }
+                    startExport(exportRecipe)
                 }) { Text(if (savedEditProblem == null) "Export" else "Export original") }
             }
         }
@@ -507,7 +545,7 @@ fun EditorScreen(photo: Photo, library: PhotoLibrary, back: () -> Unit, onDelete
             }
         }
         val completion = when {
-            shareUri != null -> "Saved in Pictures/Aperture"
+            shareUri != null -> if (reducedExport) "Smaller JPEG saved in Pictures/Aperture" else "Saved in Pictures/Aperture"
             savedByUser && !history.differsFrom(lastSaved, draft) -> "Edits saved"
             else -> null
         }
