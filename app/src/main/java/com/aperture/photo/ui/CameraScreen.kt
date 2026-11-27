@@ -57,6 +57,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aperture.photo.camera.CameraSession
 import com.aperture.photo.camera.Composition
+import com.aperture.photo.camera.CompositionGuide
+import com.aperture.photo.camera.CompositionGuideGeometry
 import com.aperture.photo.camera.Framing
 import com.aperture.photo.camera.Scene
 import com.aperture.photo.camera.SceneReading
@@ -84,6 +86,11 @@ internal fun CameraScreen(
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
     var film by rememberSaveable { mutableStateOf(Film.CLEAN) }
     val cameraPreferences = remember(context) { context.getSharedPreferences("camera", Context.MODE_PRIVATE) }
+    var guide by remember {
+        mutableStateOf(runCatching {
+            CompositionGuide.valueOf(cameraPreferences.getString("composition_guide", CompositionGuide.AUTO.name)!!)
+        }.getOrDefault(CompositionGuide.AUTO))
+    }
     var volumeShutterEnabled by remember {
         mutableStateOf(cameraPreferences.getBoolean("volume_shutter_enabled", false))
     }
@@ -171,7 +178,7 @@ internal fun CameraScreen(
                         Image(image, null, Modifier.matchParentSize(),
                             contentScale = ContentScale.Crop, alpha = reference.opacity)
                     }
-                    GuideOverlay(scene, roll, mode, Modifier.matchParentSize().pointerInput(session) {
+                    GuideOverlay(scene, roll, mode, guide, Modifier.matchParentSize().pointerInput(session) {
                         detectTapGestures { session?.focus(it.x, it.y) }
                     })
                     Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
@@ -219,6 +226,23 @@ internal fun CameraScreen(
                 }
             }
             FilmPicker(film) { film = it; operations.clearCaptureMessage() }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Guide", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                CompositionGuide.entries.forEach { item ->
+                    FilterChip(selected = guide == item, onClick = {
+                        guide = item
+                        cameraPreferences.edit().putString("composition_guide", item.name).apply()
+                    }, label = { Text(item.title) })
+                }
+            }
+            if (guide != CompositionGuide.AUTO && guide != CompositionGuide.OFF) {
+                Text("Visual overlay only · guidance follows ${mode.title}",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+            } else if (guide == CompositionGuide.OFF) {
+                Text("Grid off · assistant framing cues remain", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 11.sp)
+            }
             TextButton(onClick = {
                 volumeShutterEnabled = !volumeShutterEnabled
                 cameraPreferences.edit().putBoolean("volume_shutter_enabled", volumeShutterEnabled).apply()
@@ -321,20 +345,17 @@ fun FilmPicker(film: Film, onChange: (Film) -> Unit) {
 }
 
 @Composable
-private fun GuideOverlay(scene: Scene?, roll: Float?, mode: ShootingMode, modifier: Modifier) {
+private fun GuideOverlay(scene: Scene?, roll: Float?, mode: ShootingMode, guide: CompositionGuide, modifier: Modifier) {
     val framing = mode.framing
     val accent = MaterialTheme.colorScheme.primary
     Canvas(modifier) {
         val white = Color.White.copy(alpha = .37f)
         val center = Offset(size.width / 2, size.height / 2)
-        if (framing == Framing.THIRDS) {
-            for (step in 1..2) {
-                val x = size.width * step / 3
-                val y = size.height * step / 3
-                drawLine(white, Offset(x, 0f), Offset(x, size.height))
-                drawLine(white, Offset(0f, y), Offset(size.width, y))
-            }
-        } else if (framing != Framing.HORIZON) {
+        CompositionGuideGeometry.lines(guide, mode).forEach { line ->
+            drawLine(white, Offset(line.startX * size.width, line.startY * size.height),
+                Offset(line.endX * size.width, line.endY * size.height))
+        }
+        if (guide != CompositionGuide.OFF && framing != Framing.THIRDS && framing != Framing.HORIZON) {
             val anchor = Offset(size.width * framing.anchorX, size.height * framing.anchorY)
             drawCircle(white, 34.dp.toPx(), anchor, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         }
