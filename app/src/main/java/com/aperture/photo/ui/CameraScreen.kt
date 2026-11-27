@@ -60,6 +60,9 @@ import com.aperture.photo.camera.CameraSession
 import com.aperture.photo.camera.CameraZoom
 import com.aperture.photo.camera.ExposureCompensation
 import com.aperture.photo.camera.FocusFeedback
+import com.aperture.photo.camera.SelfTimer
+import com.aperture.photo.camera.SelfTimerCountdown
+import com.aperture.photo.camera.SelfTimerStep
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.CompositionGuide
 import com.aperture.photo.camera.CompositionGuideGeometry
@@ -74,6 +77,12 @@ import com.aperture.photo.library.Photo
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+
+private data class PendingShutter(
+    val countdown: SelfTimerCountdown,
+    val film: Film,
+    val session: CameraSession
+)
 
 @Composable
 internal fun CameraScreen(
@@ -98,6 +107,10 @@ internal fun CameraScreen(
     var volumeShutterEnabled by remember {
         mutableStateOf(cameraPreferences.getBoolean("volume_shutter_enabled", false))
     }
+    var timerSeconds by remember {
+        mutableIntStateOf(cameraPreferences.getInt("shutter_timer_seconds", 0).takeIf { it == 3 || it == 10 } ?: 0)
+    }
+    var timerHaptics by remember { mutableStateOf(cameraPreferences.getBoolean("timer_haptics_enabled", false)) }
     var mode by rememberSaveable { mutableStateOf(ShootingMode.STREET) }
     val reference = rememberCameraReference()
     var reading by remember { mutableStateOf<SceneReading?>(null) }
@@ -105,7 +118,6 @@ internal fun CameraScreen(
     var ready by remember { mutableStateOf(false) }
     var canFlip by remember { mutableStateOf(false) }
     val busy = operations.captureBusy
-    BackHandler(enabled = busy) {}
     var error by remember { mutableStateOf<String?>(null) }
     val captureMessage = operations.captureMessage
     var retry by remember { mutableIntStateOf(0) }
@@ -115,18 +127,37 @@ internal fun CameraScreen(
     var exposureError by remember { mutableStateOf(false) }
     var exposureRequestId by remember { mutableIntStateOf(0) }
     var focusFeedback by remember { mutableStateOf<FocusFeedback?>(null) }
+    var pendingShutter by remember { mutableStateOf<PendingShutter?>(null) }
+    var timerRequestId by remember { mutableIntStateOf(0) }
     var analysisAvailable by remember { mutableStateOf(false) }
     var diagnosticsEnabled by remember {
         mutableStateOf(cameraPreferences.getBoolean("exposure_diagnostics_enabled", false))
     }
     val roll = if (granted) deviceRoll() else null
 
+    fun requestShutter() {
+        if (pendingShutter != null) {
+            pendingShutter = null
+            return
+        }
+        if (!ready || !granted || busy) return
+        val active = session ?: return
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        if (timerSeconds == 0) operations.capture(film, active::takePhoto)
+        else pendingShutter = PendingShutter(SelfTimer.start(++timerRequestId, timerSeconds), film, active)
+    }
+
+    BackHandler(enabled = busy || pendingShutter != null) {
+        if (pendingShutter != null) pendingShutter = null
+    }
+
     val dispatchVolumeShutter by rememberUpdatedState {
-        if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy, session != null, 0)) false
-        else session?.let { active ->
-            operations.capture(film, active::takePhoto)
+        if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy, session != null,
+                if (pendingShutter == null) 0 else 1)) false
+        else {
+            requestShutter()
             true
-        } ?: false
+        }
     }
     DisposableEffect(onVolumeShutterChanged) {
         onVolumeShutterChanged { dispatchVolumeShutter() }
@@ -145,9 +176,35 @@ internal fun CameraScreen(
         if (focusFeedback == accepted) focusFeedback = null
     }
 
+    LaunchedEffect(pendingShutter?.countdown?.id) {
+        val request = pendingShutter ?: return@LaunchedEffect
+        var countdown = request.countdown
+        while (true) {
+            delay(1_000)
+            val active = pendingShutter?.takeIf { it.countdown.id == request.countdown.id }
+                ?: return@LaunchedEffect
+            when (val step = SelfTimer.advance(countdown)) {
+                is SelfTimerStep.Continue -> {
+                    countdown = step.countdown
+                    pendingShutter = active.copy(countdown = countdown)
+                    if (timerHaptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                }
+                SelfTimerStep.Capture -> {
+                    pendingShutter = null
+                    if (ready && granted && session === active.session && !operations.captureBusy &&
+                        owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                        operations.capture(active.film, active.session::takePhoto)
+                    }
+                    return@LaunchedEffect
+                }
+            }
+        }
+    }
+
     DisposableEffect(owner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) granted = cameraPermission(context)
+            else if (event == Lifecycle.Event.ON_PAUSE) pendingShutter = null
         }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
@@ -171,7 +228,10 @@ internal fun CameraScreen(
                                 ready = active
                                 canFlip = flip
                                 analysisAvailable = hasAnalysis
-                                if (!active) reading = null
+                                if (!active) {
+                                    reading = null
+                                    pendingShutter = null
+                                }
                         }, { zoom = it }, { exposure = it }, { focusFeedback = it }, { error = it })
                         session = connection
                         onDispose {
@@ -213,6 +273,16 @@ internal fun CameraScreen(
                     if (diagnosticsEnabled && analysisAvailable) {
                         ExposureDiagnosticsOverlay(scene?.exposureDiagnostics,
                             Modifier.align(Alignment.TopEnd).padding(10.dp))
+                    }
+                    pendingShutter?.let { pending ->
+                        Column(Modifier.align(Alignment.Center)
+                            .clip(RoundedCornerShape(18.dp)).background(Color.Black.copy(alpha = .76f))
+                            .padding(horizontal = 28.dp, vertical = 18.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("${pending.countdown.secondsRemaining}", color = Color.White,
+                                fontSize = 40.sp, fontWeight = FontWeight.Light)
+                            Text("Tap shutter or Back to cancel", color = Color.White, fontSize = 11.sp)
+                        }
                     }
                     Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
@@ -260,6 +330,22 @@ internal fun CameraScreen(
                 }
             }
             FilmPicker(film) { film = it; operations.clearCaptureMessage() }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Timer", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                listOf(0, 3, 10).forEach { seconds ->
+                    FilterChip(selected = timerSeconds == seconds, enabled = pendingShutter == null && !busy,
+                        onClick = {
+                            timerSeconds = seconds
+                            cameraPreferences.edit().putInt("shutter_timer_seconds", seconds).apply()
+                        }, label = { Text(if (seconds == 0) "Off" else "${seconds}s") })
+                }
+                Text("Haptics", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                Switch(checked = timerHaptics, enabled = pendingShutter == null && !busy, onCheckedChange = {
+                    timerHaptics = it
+                    cameraPreferences.edit().putBoolean("timer_haptics_enabled", it).apply()
+                }, modifier = Modifier.semantics { contentDescription = "Haptic countdown ticks" })
+            }
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Exposure estimate", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
@@ -362,19 +448,20 @@ internal fun CameraScreen(
             val shutterColor = MaterialTheme.colorScheme.primary.copy(alpha = if (ready) 1f else .36f)
             Box(
                 Modifier.size(66.dp).border(1.dp, shutterColor, CircleShape).clip(CircleShape)
-                    .semantics { contentDescription = "Shutter" }
-                    .clickable(enabled = ready && !busy, role = Role.Button, onClickLabel = "Take photo") {
-                        val active = session ?: return@clickable
-                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                        operations.capture(film, active::takePhoto)
+                    .semantics { contentDescription = if (pendingShutter == null) "Shutter" else "Cancel timer" }
+                    .clickable(enabled = ready && !busy, role = Role.Button,
+                        onClickLabel = if (pendingShutter == null) "Take photo" else "Cancel timer") {
+                        requestShutter()
                     },
                 contentAlignment = Alignment.Center
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(29.dp), strokeWidth = 2.dp)
+                else if (pendingShutter != null) Text("${pendingShutter!!.countdown.secondsRemaining}",
+                    color = Color.White, fontWeight = FontWeight.SemiBold)
                 else Box(Modifier.size(53.dp).background(shutterColor, CircleShape))
             }
             Box(Modifier.size(66.dp), contentAlignment = Alignment.Center) {
-                if (canFlip) TextButton(enabled = !busy, onClick = {
+                if (canFlip) TextButton(enabled = !busy && pendingShutter == null, onClick = {
                     operations.clearCaptureMessage()
                     session?.flip()
                 }) { Text("Flip", fontSize = 11.sp) }
