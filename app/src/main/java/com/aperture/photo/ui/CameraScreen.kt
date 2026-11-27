@@ -58,6 +58,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aperture.photo.camera.CameraSession
 import com.aperture.photo.camera.CameraZoom
+import com.aperture.photo.camera.CameraFlashMode
+import com.aperture.photo.camera.CameraFlashState
 import com.aperture.photo.camera.ExposureCompensation
 import com.aperture.photo.camera.FocusFeedback
 import com.aperture.photo.camera.SelfTimer
@@ -127,6 +129,7 @@ internal fun CameraScreen(
     var exposureError by remember { mutableStateOf(false) }
     var exposureRequestId by remember { mutableIntStateOf(0) }
     var focusFeedback by remember { mutableStateOf<FocusFeedback?>(null) }
+    var flashState by remember { mutableStateOf<CameraFlashState?>(null) }
     var pendingShutter by remember { mutableStateOf<PendingShutter?>(null) }
     var timerRequestId by remember { mutableIntStateOf(0) }
     var analysisAvailable by remember { mutableStateOf(false) }
@@ -232,7 +235,7 @@ internal fun CameraScreen(
                                     reading = null
                                     pendingShutter = null
                                 }
-                        }, { zoom = it }, { exposure = it }, { focusFeedback = it }, { error = it })
+                        }, { zoom = it }, { exposure = it }, { focusFeedback = it }, { flashState = it }, { error = it })
                         session = connection
                         onDispose {
                             connection.close()
@@ -330,6 +333,20 @@ internal fun CameraScreen(
                 }
             }
             FilmPicker(film) { film = it; operations.clearCaptureMessage() }
+            flashState?.let { state ->
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (state.mode == CameraFlashMode.TORCH) "Torch" else "Still flash",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    CameraFlashMode.choices(supported = true).forEach { item ->
+                        FilterChip(selected = state.mode == item,
+                            enabled = ready && !busy && pendingShutter == null && !state.updating,
+                            onClick = { session?.setFlashMode(item) }, label = { Text(item.title) })
+                    }
+                    if (state.updating) Text("Changing…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 10.sp) }
+                }
+            }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Timer", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
