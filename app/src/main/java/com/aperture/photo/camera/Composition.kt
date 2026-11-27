@@ -33,7 +33,8 @@ data class Scene(
     val shadowFraction: Float,
     val highlightFraction: Float,
     val focus: FocusRegion?,
-    val portraitEyes: FocusRegion? = null
+    val portraitEyes: FocusRegion? = null,
+    val exposureDiagnostics: ExposureDiagnostics? = null
 )
 
 /** Finds a dominant cluster of detail in the preview. This is not object recognition. */
@@ -85,7 +86,8 @@ object Composition {
             (sum.toFloat() / samples.size).roundToInt(),
             shadows.toFloat() / samples.size,
             highlights.toFloat() / samples.size,
-            focus
+            focus,
+            exposureDiagnostics = ExposureDiagnostics.from(samples)
         )
     }
 
