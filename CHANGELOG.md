@@ -5,6 +5,7 @@
 - Added an optional RGB channel histogram with per-channel near-black and near-white estimates and accessible text summaries.
 - Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
 - Added persistent camera guide choices for automatic, thirds, center, diagonal, golden-ratio, and off overlays.
+- Added a Darkroom photo information panel with original pixel dimensions, format, file size and date, and available EXIF capture details.
 - Added an opt-in volume-key shutter shortcut, disabled by default and active only while the camera can capture.
 - Reject recognized animations on import and fill transparent pixels with white for JPEG export.
 - Retain capture outcomes, single exports, and batch progress across Activity recreation.
