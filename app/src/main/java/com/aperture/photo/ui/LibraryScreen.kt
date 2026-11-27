@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -42,6 +43,7 @@ import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
 import com.aperture.photo.imaging.comparisonBaseline
 import com.aperture.photo.imaging.Film
+import com.aperture.photo.imaging.InspectionTransform
 import com.aperture.photo.library.PhotoInformation
 import com.aperture.photo.library.readPhotoInformation
 import com.aperture.photo.library.Photo
@@ -284,6 +286,10 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
         compareRequested || showBefore -> key(baseline) { renderedPhoto(source, baseline).value }
         else -> null
     }
+    val comparing = showBefore && editsLoaded && savedEditProblem == null
+    val displayed = if (comparing) before else rendered
+    val displayedImage = displayed?.getOrNull()
+    val inspection = remember(photo, previewRecipe.crop, previewRecipe.quarterTurns) { EditorInspectionState() }
     var showHistogram by rememberSaveable { mutableStateOf(false) }
     val currentExport = operations.editorExport?.takeIf { it.photo == photo }
     val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
@@ -476,30 +482,43 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             }
         }
 
-        if (editsLoaded && savedEditProblem == null) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = showBefore, enabled = showBefore || preview != null, onClick = {
-                    compareRequested = true
-                    showBefore = !showBefore
-                }, label = { Text("Before") })
-                val label = when {
-                    !showBefore -> "After · current edits"
-                    photo.film == Film.CLEAN -> "Before · original tones"
-                    else -> "Before · ${photo.film.title} capture look"
+        if (editsLoaded) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (savedEditProblem == null) {
+                    FilterChip(selected = showBefore, enabled = showBefore || preview != null, onClick = {
+                        compareRequested = true
+                        showBefore = !showBefore
+                    }, label = {
+                        Text(when {
+                            !showBefore -> "Before"
+                            photo.film == Film.CLEAN -> "Before · original tones"
+                            else -> "Before · ${photo.film.title}"
+                        })
+                    })
                 }
-                Text(label, style = MaterialTheme.typography.labelMedium)
+                val aspect = displayedImage?.let { it.width.toFloat() / it.height }
+                val zoom = inspection.transform.zoom
+                TextButton(enabled = aspect != null && zoom > 1f,
+                    onClick = { aspect?.let { inspection.move(it, .5f) } },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.width(48.dp).semantics { contentDescription = "Zoom out" }) { Text("−") }
+                TextButton(enabled = aspect != null && zoom < InspectionTransform.MaxZoom,
+                    onClick = { aspect?.let { inspection.move(it, 2f) } },
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.width(48.dp).semantics { contentDescription = "Zoom in" }) { Text("+") }
+                TextButton(enabled = zoom > 1f, onClick = inspection::reset,
+                    contentPadding = PaddingValues(0.dp),
+                    modifier = Modifier.width(48.dp).semantics { contentDescription = "Reset photo zoom to fit" }) { Text("Fit") }
+                Text("${"%.1f".format(zoom)}× preview", style = MaterialTheme.typography.labelMedium)
             }
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(18.dp))
+        Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged(inspection::resize).clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-            val comparing = showBefore && editsLoaded && savedEditProblem == null
-            val displayed = if (comparing) before else rendered
-            val image = displayed?.getOrNull()
+            val image = displayedImage
             when {
-                image != null -> Image(image.asImageBitmap(), if (comparing) "Before edits" else "Edited photo",
-                    Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                image != null -> InspectablePhoto(image, if (comparing) "Before edits" else "Edited photo", inspection)
                 loaded?.isFailure == true -> Text("This photo could not be opened.", color = MaterialTheme.colorScheme.error)
                 displayed?.isFailure == true -> Text(
                     if (comparing) "Before preview unavailable." else "This edit could not be previewed.",
