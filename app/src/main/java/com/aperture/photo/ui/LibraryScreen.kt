@@ -45,6 +45,8 @@ import com.aperture.photo.library.SavedEditProblem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -183,7 +185,7 @@ fun LibraryScreen(photos: List<Photo>, library: PhotoLibrary, back: () -> Unit, 
                         tile.clickable(onClickLabel = "Edit photo") { open(photo) }
                     }
                     Box(interaction) {
-                        PhotoThumbnail(photo, Modifier.fillMaxSize(), "${photo.film.title} photo")
+                        PhotoThumbnail(photo, library, Modifier.fillMaxSize(), "${photo.film.title} photo")
                         if (selecting && checked) {
                             Box(Modifier.matchParentSize().border(3.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(12.dp)))
                             Surface(
@@ -206,12 +208,18 @@ private data class BatchProgress(val completed: Int, val total: Int)
 
 private val SelectionSaver = listSaver<List<String>, String>(save = { it }, restore = { it })
 
+private val thumbnailReads = Semaphore(2)
+
 @Composable
-fun PhotoThumbnail(photo: Photo, modifier: Modifier, description: String) {
-    val loaded by loadedPhoto(photo, 320)
-    val result by renderedPhoto(loaded?.getOrNull(), Recipe(photo.film))
+fun PhotoThumbnail(photo: Photo, library: PhotoLibrary, modifier: Modifier, description: String) {
+    var bitmap by remember(photo, library) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(photo, library) {
+        bitmap = thumbnailReads.withPermit {
+            withContext(Dispatchers.IO) { runCatching { library.thumbnail(photo) }.getOrNull() }
+        }
+    }
     Box(modifier.background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-        result?.getOrNull()?.let { Image(it.asImageBitmap(), description, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        bitmap?.let { Image(it.asImageBitmap(), description, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
     }
 }
 
