@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Retain capture outcomes, single exports, and batch progress across Activity recreation.
 - Check export memory before decoding and offer an explicit smaller JPEG when needed.
 - Recover stale Aperture temporary files, orphan edit files, and verified unfinished exports.
 - Added regression fixtures for cropped, rotated, and mirrored camera luma sampling.
