@@ -67,6 +67,7 @@ import com.aperture.photo.camera.ExposureAssistMode
 import com.aperture.photo.camera.ExposureSuggestion
 import com.aperture.photo.camera.ExposureStability
 import com.aperture.photo.camera.SmartExposure
+import com.aperture.photo.camera.ShootingCoach
 import com.aperture.photo.camera.FocusFeedback
 import com.aperture.photo.camera.ReferenceAlignment
 import com.aperture.photo.camera.SelfTimer
@@ -153,6 +154,7 @@ internal fun CameraScreen(
     var diagnosticsEnabled by remember {
         mutableStateOf(cameraPreferences.getBoolean("exposure_diagnostics_enabled", false))
     }
+    var coachOpen by rememberSaveable { mutableStateOf(false) }
     var assistMode by rememberSaveable { mutableStateOf(ExposureAssistMode.GUIDED) }
     // Auto is explicitly armed for one correction, never a feedback loop.
     var autoArmed by rememberSaveable { mutableStateOf(false) }
@@ -161,7 +163,7 @@ internal fun CameraScreen(
     val stability = remember(session, mode, zoom.ratio, exposure?.index, assistMode, autoArmed) { ExposureStability() }
     var suggestion by remember(stability) { mutableStateOf<ExposureSuggestion?>(null) }
     val assistAllowed = granted && ready && analysisAvailable && !busy && pendingShutter == null &&
-        !aligningReference && !markingSubject && !referenceDialogOpen && !cueSettingsOpen && !assistUpdating
+        !aligningReference && !markingSubject && !referenceDialogOpen && !cueSettingsOpen && !coachOpen && !assistUpdating
     val suggestedIndex = suggestion?.let { SmartExposure.target(it, exposure) }
 
     fun applyExposureAdvice(target: Int) {
@@ -224,7 +226,7 @@ internal fun CameraScreen(
         hapticsOn = hapticCues,
         allowed = granted && ready && analysisAvailable && !busy && pendingShutter == null &&
             captureMessage == null && !markingSubject && manualSubject == null && !aligningReference &&
-            !referenceDialogOpen && !cueSettingsOpen,
+            !referenceDialogOpen && !cueSettingsOpen && !coachOpen,
         mode = mode,
         anchor = anchor,
         reading = reading,
@@ -250,7 +252,7 @@ internal fun CameraScreen(
     }
 
     val dispatchVolumeShutter by rememberUpdatedState {
-        if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy || assistUpdating, session != null,
+        if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy || assistUpdating || coachOpen, session != null,
                 if (pendingShutter == null) 0 else 1)) false
         else {
             requestShutter()
@@ -309,6 +311,7 @@ internal fun CameraScreen(
                 autoArmed = false
                 assistMessage = null
                 reading = null
+                coachOpen = false
             }
         }
         owner.lifecycle.addObserver(observer)
@@ -481,6 +484,11 @@ internal fun CameraScreen(
                     }, label = { Text(item.title) })
                 }
             }
+            TextButton(enabled = ready && !busy && pendingShutter == null && !assistUpdating &&
+                !markingSubject && !aligningReference, onClick = {
+                    autoArmed = false
+                    coachOpen = true
+                }) { Text("Shooting coach · ${mode.title}") }
             FilmPicker(film) { film = it; operations.clearCaptureMessage() }
             Text("Exposure assistant", style = MaterialTheme.typography.titleSmall)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -744,6 +752,52 @@ internal fun CameraScreen(
                 shutterControls()
             }
         }
+    }
+
+    if (granted && coachOpen) {
+        val coaching = ShootingCoach.advise(mode, reading, SystemClock.elapsedRealtime(), manualSubject)
+        AlertDialog(
+            onDismissRequest = { coachOpen = false },
+            title = { Text("${mode.title} shooting coach") },
+            text = {
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Framing", style = MaterialTheme.typography.titleSmall)
+                    Text(coaching.lesson.framing)
+                    Text("Light", style = MaterialTheme.typography.titleSmall)
+                    Text(coaching.lesson.light)
+                    Text("Technique", style = MaterialTheme.typography.titleSmall)
+                    Text(coaching.lesson.technique)
+                    coaching.liveTip?.let {
+                        Text("Preview observation", style = MaterialTheme.typography.titleSmall)
+                        Text(it)
+                    }
+                    coaching.focus?.let { suggested ->
+                        TextButton(enabled = ready && !busy && pendingShutter == null &&
+                            !assistUpdating, onClick = {
+                            val latestAdvice = ShootingCoach.advise(mode, reading,
+                                SystemClock.elapsedRealtime(), manualSubject)
+                            val fresh = latestAdvice.focus
+                            if (fresh != null && fresh.label == suggested.label &&
+                                owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                                session?.focus(fresh.point.x, fresh.point.y)
+                                coachOpen = false
+                            }
+                        }) { Text(suggested.label) }
+                    }
+                    if (coaching.recommendTimer && timerSeconds == 0) {
+                        TextButton(enabled = ready && !busy && pendingShutter == null, onClick = {
+                            timerSeconds = 3
+                            cameraPreferences.edit().putInt("shutter_timer_seconds", 3).apply()
+                            coachOpen = false
+                        }) { Text("Use 3-second timer") }
+                    }
+                    Text("Tips are based on the selected mode and available preview measurements, not automatic subject recognition.",
+                        style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = { TextButton(onClick = { coachOpen = false }) { Text("Done") } }
+        )
     }
 
     if (granted && referenceDialogOpen) {

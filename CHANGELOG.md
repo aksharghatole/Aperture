@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a seven-mode shooting coach with practical lighting, framing and technique advice, fresh preview observations, explicit eye/marker focus actions and a still-scene timer shortcut.
+
 - Added Guided, Auto and Manual exposure assistance. Guided recommends small supported exposure adjustments; Auto applies at most one correction per explicit activation and avoids mixed lighting and deliberate night scenes.
 
 - Keep the camera shutter outside scrollable settings, offer center focus without gestures, expose labeled Darkroom sliders and scroll compact editor layouts; separate Library and Darkroom headers from their action rows.
