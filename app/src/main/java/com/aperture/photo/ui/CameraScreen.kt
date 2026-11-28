@@ -388,6 +388,7 @@ internal fun CameraScreen(
                                 canFlip = flip
                                 analysisAvailable = hasAnalysis
                                 if (!active) {
+                                    steadyShot = null
                                     reading = null
                                     pendingShutter = null
                                     markingSubject = false
@@ -404,6 +405,7 @@ internal fun CameraScreen(
                         }, { exposure = it }, { focusFeedback = it }, { flashState = it }, { error = it })
                         session = connection
                         onDispose {
+                            steadyShot = null
                             connection.close()
                             reading = null
                             session = null
@@ -526,6 +528,7 @@ internal fun CameraScreen(
                 ShootingMode.entries.forEach { item ->
                     FilterChip(selected = item == mode, onClick = {
                         if (mode != item) {
+                            steadyShot = null
                             reading = null
                             autoArmed = false
                             assistMessage = null
@@ -538,6 +541,7 @@ internal fun CameraScreen(
             }
             TextButton(enabled = ready && !busy && pendingShutter == null && !assistUpdating &&
                 !markingSubject && !aligningReference, onClick = {
+                    steadyShot = null
                     autoArmed = false
                     coachOpen = true
                 }) { Text("Shooting coach · ${mode.title}") }
@@ -573,6 +577,7 @@ internal fun CameraScreen(
                     FilterChip(selected = assistMode == choice,
                         enabled = ready && !busy && pendingShutter == null && !assistUpdating,
                         onClick = {
+                            steadyShot = null
                             stability.clear()
                             suggestion = null
                             assistMode = choice
@@ -621,7 +626,7 @@ internal fun CameraScreen(
                     CameraFlashMode.choices(supported = true).forEach { item ->
                         FilterChip(selected = state.mode == item,
                             enabled = ready && !busy && pendingShutter == null && !state.updating,
-                            onClick = { session?.setFlashMode(item) }, label = { Text(item.title) })
+                            onClick = { steadyShot = null; session?.setFlashMode(item) }, label = { Text(item.title) })
                     }
                     if (state.updating) Text("Changing…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 10.sp) }
@@ -633,6 +638,7 @@ internal fun CameraScreen(
                 listOf(0, 3, 10).forEach { seconds ->
                     FilterChip(selected = timerSeconds == seconds, enabled = pendingShutter == null && !busy,
                         onClick = {
+                            steadyShot = null
                             timerSeconds = seconds
                             cameraPreferences.edit().putInt("shutter_timer_seconds", seconds).apply()
                         }, label = { Text(if (seconds == 0) "Off" else "${seconds}s") })
@@ -663,12 +669,13 @@ internal fun CameraScreen(
                 CameraFramingMenu(anchor, manualSubject != null, !busy && pendingShutter == null,
                     canMark = ready, selectAnchor = { anchor = it }, mark = {
                         aligningReference = false
+                        steadyShot = null
                         markingSubject = true
                     }, clear = {
                         markingSubject = false
                         manualSubject = null
                     })
-                TextButton(enabled = !busy && pendingShutter == null, onClick = { cueSettingsOpen = true },
+                TextButton(enabled = !busy && pendingShutter == null, onClick = { steadyShot = null; cueSettingsOpen = true },
                     modifier = Modifier.semantics { contentDescription = "Composition cues settings" }) {
                     Text("Cues")
                 }
@@ -693,7 +700,7 @@ internal fun CameraScreen(
                 Text("Zoom ${"%.1f".format(zoom.ratio)}×", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp)
                 zoom.presets().forEach { preset ->
-                    TextButton(enabled = ready && !busy, onClick = { session?.setZoomRatio(preset) },
+                    TextButton(enabled = ready && !busy, onClick = { steadyShot = null; session?.setZoomRatio(preset) },
                         modifier = Modifier.semantics { contentDescription = "Zoom to ${preset.toInt()} times" }) {
                         Text("${preset.toInt()}×")
                     }
@@ -705,6 +712,7 @@ internal fun CameraScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Spacer(Modifier.weight(1f))
                     TextButton(enabled = current.index != 0 && !busy && !assistUpdating && pendingShutter == null, onClick = {
+                        steadyShot = null
                         assistMode = ExposureAssistMode.MANUAL
                         autoArmed = false
                         assistMessage = null
@@ -718,6 +726,7 @@ internal fun CameraScreen(
                 Slider(
                     value = current.index.toFloat(),
                     onValueChange = { value ->
+                        steadyShot = null
                         assistMode = ExposureAssistMode.MANUAL
                         autoArmed = false
                         assistMessage = null
@@ -806,6 +815,7 @@ internal fun CameraScreen(
                     letterSpacing = (-1).sp, modifier = Modifier.weight(1f))
                 Row(Modifier.weight(1.5f, fill = false).horizontalScroll(rememberScrollState())) {
                     if (granted) TextButton(enabled = !busy, onClick = {
+                        steadyShot = null
                         aligningReference = false
                         markingSubject = false
                         referenceDialogOpen = true
