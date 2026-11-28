@@ -63,6 +63,10 @@ import com.aperture.photo.camera.CameraZoom
 import com.aperture.photo.camera.CameraFlashMode
 import com.aperture.photo.camera.CameraFlashState
 import com.aperture.photo.camera.ExposureCompensation
+import com.aperture.photo.camera.ExposureAssistMode
+import com.aperture.photo.camera.ExposureSuggestion
+import com.aperture.photo.camera.ExposureStability
+import com.aperture.photo.camera.SmartExposure
 import com.aperture.photo.camera.FocusFeedback
 import com.aperture.photo.camera.ReferenceAlignment
 import com.aperture.photo.camera.SelfTimer
@@ -149,6 +153,70 @@ internal fun CameraScreen(
     var diagnosticsEnabled by remember {
         mutableStateOf(cameraPreferences.getBoolean("exposure_diagnostics_enabled", false))
     }
+    var assistMode by rememberSaveable { mutableStateOf(ExposureAssistMode.GUIDED) }
+    // Auto is explicitly armed for one correction, never a feedback loop.
+    var autoArmed by rememberSaveable { mutableStateOf(false) }
+    var assistUpdating by remember { mutableStateOf(false) }
+    var assistMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val stability = remember(session, mode, zoom.ratio, exposure?.index, assistMode, autoArmed) { ExposureStability() }
+    var suggestion by remember(stability) { mutableStateOf<ExposureSuggestion?>(null) }
+    val assistAllowed = granted && ready && analysisAvailable && !busy && pendingShutter == null &&
+        !aligningReference && !markingSubject && !referenceDialogOpen && !cueSettingsOpen && !assistUpdating
+    val suggestedIndex = suggestion?.let { SmartExposure.target(it, exposure) }
+
+    fun applyExposureAdvice(target: Int) {
+        val active = session ?: return
+        if (!assistAllowed || !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        val fresh = SceneReading.accept(reading, SystemClock.elapsedRealtime()) ?: return
+        val current = exposure ?: return
+        val stable = stability.update(fresh, SystemClock.elapsedRealtime(), mode) ?: return
+        if (stable != suggestion || SmartExposure.target(stable, current) != target ||
+            target == current.index) return
+        autoArmed = false
+        assistUpdating = true
+        exposureError = false
+        assistMessage = "Applying exposure suggestion…"
+        val requestId = ++exposureRequestId
+        active.setExposureCompensationIndex(target) { success ->
+            if (requestId == exposureRequestId && session === active) {
+                assistUpdating = false
+                exposureError = !success
+                assistMessage = if (success) "Exposure adjusted. Check the preview before shooting."
+                    else "Could not apply exposure. Use manual controls."
+            }
+        }
+    }
+
+    LaunchedEffect(stability, reading, assistAllowed, assistMode) {
+        if (!assistAllowed || assistMode == ExposureAssistMode.MANUAL ||
+            !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            stability.clear()
+            suggestion = null
+            return@LaunchedEffect
+        }
+        val stable = stability.update(reading, SystemClock.elapsedRealtime(), mode)
+        suggestion = stable
+        if (assistMode == ExposureAssistMode.AUTO && autoArmed && stable != null) {
+            val target = SmartExposure.target(stable, exposure)
+            if (target == null) {
+                autoArmed = false
+                assistMessage = "No automatic exposure change recommended."
+            }
+        }
+    }
+    LaunchedEffect(suggestion, suggestedIndex, assistAllowed, autoArmed, assistMode) {
+        if (assistMode == ExposureAssistMode.AUTO && autoArmed && assistAllowed) {
+            suggestedIndex?.let { applyExposureAdvice(it) }
+        }
+    }
+    LaunchedEffect(session, ready) {
+        if (!ready) {
+            if (assistUpdating) exposureRequestId++
+            assistUpdating = false
+            autoArmed = false
+            assistMessage = null
+        }
+    }
     val roll = if (granted) deviceRoll() else null
     val advice = Composition.advice(scene, roll, mode, analysisAvailable, anchor, manualSubject != null)
     val cueAvailability = CameraCueFeedback(
@@ -168,7 +236,7 @@ internal fun CameraScreen(
             pendingShutter = null
             return
         }
-        if (!ready || !granted || busy) return
+        if (!ready || !granted || busy || assistUpdating) return
         val active = session ?: return
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         if (timerSeconds == 0) operations.capture(film, active::takePhoto)
@@ -182,7 +250,7 @@ internal fun CameraScreen(
     }
 
     val dispatchVolumeShutter by rememberUpdatedState {
-        if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy, session != null,
+        if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy || assistUpdating, session != null,
                 if (pendingShutter == null) 0 else 1)) false
         else {
             requestShutter()
@@ -238,6 +306,9 @@ internal fun CameraScreen(
                 pendingShutter = null
                 markingSubject = false
                 manualSubject = null
+                autoArmed = false
+                assistMessage = null
+                reading = null
             }
         }
         owner.lifecycle.addObserver(observer)
@@ -269,7 +340,12 @@ internal fun CameraScreen(
                                     manualSubject = null
                                 }
                         }, {
-                            if (zoom.ratio != it.ratio) manualSubject = null
+                            if (zoom.ratio != it.ratio) {
+                                manualSubject = null
+                                reading = null
+                                autoArmed = false
+                                assistMessage = null
+                            }
                             zoom = it
                         }, { exposure = it }, { focusFeedback = it }, { flashState = it }, { error = it })
                         session = connection
@@ -394,7 +470,11 @@ internal fun CameraScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ShootingMode.entries.forEach { item ->
                     FilterChip(selected = item == mode, onClick = {
-                        if (mode != item) reading = null
+                        if (mode != item) {
+                            reading = null
+                            autoArmed = false
+                            assistMessage = null
+                        }
                         mode = item
                         session?.shootingMode = item
                         operations.clearCaptureMessage()
@@ -402,6 +482,53 @@ internal fun CameraScreen(
                 }
             }
             FilmPicker(film) { film = it; operations.clearCaptureMessage() }
+            Text("Exposure assistant", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ExposureAssistMode.entries.forEach { choice ->
+                    FilterChip(selected = assistMode == choice,
+                        enabled = ready && !busy && pendingShutter == null && !assistUpdating,
+                        onClick = {
+                            stability.clear()
+                            suggestion = null
+                            assistMode = choice
+                            autoArmed = choice == ExposureAssistMode.AUTO
+                            assistMessage = null
+                        }, label = { Text(choice.title) })
+                }
+            }
+            if (assistMode != ExposureAssistMode.MANUAL) {
+                Text(when {
+                    !analysisAvailable -> "Scene analysis unavailable on this lens."
+                    !ready -> "Waiting for the camera."
+                    suggestion == null -> "Reading the light…"
+                    else -> suggestion!!.text
+                }, style = MaterialTheme.typography.bodySmall)
+                if (assistMode == ExposureAssistMode.GUIDED && suggestedIndex != null) {
+                    val ev = suggestedIndex * (exposure?.stepEv ?: 0f)
+                    TextButton(enabled = assistAllowed, onClick = { applyExposureAdvice(suggestedIndex) }) {
+                        Text("Try ${"%+.1f".format(ev)} EV")
+                    }
+                }
+                if (assistMode == ExposureAssistMode.AUTO) {
+                    Text(if (autoArmed) "Waiting for stable light. One adjustment only."
+                        else "Auto is idle. Recheck when the scene changes.",
+                        style = MaterialTheme.typography.bodySmall)
+                    TextButton(enabled = assistAllowed && !autoArmed, onClick = {
+                        stability.clear()
+                        suggestion = null
+                        autoArmed = true
+                        assistMessage = null
+                    }) { Text("Recheck light") }
+                }
+                assistMessage?.let {
+                    Text(it, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                if (exposure?.supported != true && ready) {
+                    Text("This lens does not support exposure compensation.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
             flashState?.let { state ->
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -493,7 +620,10 @@ internal fun CameraScreen(
                     Text("Camera exposure ${if (current.ev >= 0f) "+" else ""}${"%.1f".format(current.ev)} EV",
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Spacer(Modifier.weight(1f))
-                    TextButton(enabled = current.index != 0 && !busy, onClick = {
+                    TextButton(enabled = current.index != 0 && !busy && !assistUpdating && pendingShutter == null, onClick = {
+                        assistMode = ExposureAssistMode.MANUAL
+                        autoArmed = false
+                        assistMessage = null
                         exposureError = false
                         val requestId = ++exposureRequestId
                         session?.setExposureCompensationIndex(0) { success ->
@@ -504,6 +634,9 @@ internal fun CameraScreen(
                 Slider(
                     value = current.index.toFloat(),
                     onValueChange = { value ->
+                        assistMode = ExposureAssistMode.MANUAL
+                        autoArmed = false
+                        assistMessage = null
                         val target = current.clamp(value.toInt())
                         exposure = current.copy(index = target)
                         exposureError = false
@@ -514,7 +647,7 @@ internal fun CameraScreen(
                     },
                     valueRange = current.minIndex.toFloat()..current.maxIndex.toFloat(),
                     steps = (current.maxIndex - current.minIndex - 1).coerceAtLeast(0),
-                    enabled = !busy,
+                    enabled = !busy && !assistUpdating && pendingShutter == null,
                     modifier = Modifier.width(120.dp).semantics {
                         contentDescription = "Camera exposure compensation, ${"%.1f".format(current.ev)} EV"
                     }
@@ -555,7 +688,7 @@ internal fun CameraScreen(
             Box(
                 Modifier.size(66.dp).border(1.dp, shutterColor, CircleShape).clip(CircleShape)
                     .semantics { contentDescription = if (pendingShutter == null) "Shutter" else "Cancel timer" }
-                    .clickable(enabled = ready && !busy, role = Role.Button,
+                    .clickable(enabled = ready && !busy && !assistUpdating, role = Role.Button,
                         onClickLabel = if (pendingShutter == null) "Take photo" else "Cancel timer") {
                         requestShutter()
                     },

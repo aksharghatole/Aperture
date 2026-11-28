@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added Guided, Auto and Manual exposure assistance. Guided recommends small supported exposure adjustments; Auto applies at most one correction per explicit activation and avoids mixed lighting and deliberate night scenes.
+
 - Keep the camera shutter outside scrollable settings, offer center focus without gestures, expose labeled Darkroom sliders and scroll compact editor layouts; separate Library and Darkroom headers from their action rows.
 
 - Added adjustable edge/corner crop handles, ratio locking, freeform sizing, labeled position and size sliders, and original-pixel dimensions.
