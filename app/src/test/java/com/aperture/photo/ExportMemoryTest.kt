@@ -38,6 +38,12 @@ class ExportMemoryTest {
         assertEquals(80L, ExportMemory.budget(400L, 320L))
     }
 
+    @Test fun grainUsesNoAdditionalFullImageBuffer() {
+        val full = ExportMemory.estimate(4000, 3000, Recipe())
+        val grained = ExportMemory.estimate(4000, 3000, Recipe(grainIntensity = .8f, grainSize = .6f))
+        assertEquals(full, grained)
+    }
+
     @Test fun smallImagesCanExportWithLimitedHeapHeadroom() {
         val budget = ExportMemory.budget(24L * 1024 * 1024, 16L * 1024 * 1024)
         ExportMemory.check(320, 240, Recipe(), null, budget)
