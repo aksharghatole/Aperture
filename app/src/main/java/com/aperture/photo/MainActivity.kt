@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.LaunchedEffect
@@ -22,6 +23,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.ViewModelProvider
 import com.aperture.photo.ui.CameraReferenceState
@@ -29,6 +31,7 @@ import com.aperture.photo.ui.PhotoOperations
 import com.aperture.photo.ui.CameraScreen
 import com.aperture.photo.ui.EditorScreen
 import com.aperture.photo.ui.LibraryScreen
+import com.aperture.photo.library.Photo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -68,8 +71,11 @@ class MainActivity : ComponentActivity() {
             val screenState = rememberSaveableStateHolder()
             var inLibrary by rememberSaveable { mutableStateOf(false) }
             var selectedName by rememberSaveable { mutableStateOf<String?>(null) }
-            val photos = remember(operations.libraryRevision) { library.all() }
-            val selected = photos.firstOrNull { it.file.name == selectedName }
+            var photos by remember(library) { mutableStateOf<List<Photo>?>(null) }
+            LaunchedEffect(library, operations.libraryRevision) {
+                photos = withContext(Dispatchers.IO) { library.all() }
+            }
+            val selected = photos?.firstOrNull { it.file.name == selectedName }
 
             BackHandler(inLibrary) {
                 if (selectedName != null) selectedName = null else inLibrary = false
@@ -92,14 +98,15 @@ class MainActivity : ComponentActivity() {
                                 operations.libraryChanged()
                                 selectedName = null
                             }
-                            inLibrary -> LibraryScreen(photos, operations, { inLibrary = false }) {
-                                operations.libraryChanged()
-                                selectedName = it.file.name
+                            inLibrary && photos == null -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                            inLibrary -> screenState.SaveableStateProvider("library") {
+                                LibraryScreen(photos.orEmpty(), operations, { inLibrary = false }) {
+                                    selectedName = it.file.name
+                                }
                             }
                             else -> screenState.SaveableStateProvider("camera") {
-                                CameraScreen(operations, reference, photos.firstOrNull(), { volumeShutter = it }) {
+                                CameraScreen(operations, reference, photos?.firstOrNull(), { volumeShutter = it }) {
                                     if (!operations.captureBusy) {
-                                        operations.libraryChanged()
                                         inLibrary = true
                                     }
                                 }

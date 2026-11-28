@@ -47,7 +47,13 @@ Aperture uses Android’s image decoder for still photos, including JPEG, PNG, a
 
 Exports are new sRGB JPEGs. Aperture converts embedded source profiles to sRGB before applying edits, then writes the crop and rotation into the pixels. Source EXIF orientation is applied when decoding. The exported JPEG carries no copied capture date, camera settings, camera identifiers, GPS coordinates, orientation, or source dimensions. Aperture keeps the original bytes and metadata in its local library.
 
+Library keeps recently rendered thumbnails in a bounded memory cache and restores the scroll position when you return from Darkroom or the camera. For library performance checks, the Android test suite measures listing and sampled viewport loads with 100, 1,000, and 5,000 synthetic local photos. Its timings cover the thumbnail workload. UI frame pacing depends on the device.
+
 ## Device verification
+
+Use **Cues** in the viewfinder controls to enable spoken or haptic composition guidance. Both start off. Spoken cues use an installed offline English voice. Haptic cues follow system touch feedback settings. Aim uses one tick, level uses two, and lighting uses a click. Stable cues pause while using a manual subject marker, setting up a shot, or leaving the camera.
+
+For cue verification, enable each option and hold a scene with a clear aim or level correction. Confirm that changing the framing or backgrounding Aperture stops speech, and that the visual hint stays available with cues off or without an offline voice or vibration motor. Check with airplane mode enabled.
 
 For group portraits, frame two to four people in Portrait mode with the rear and front cameras. Check that the box follows the visible group in portrait and landscape, and that the direction agrees with the mirrored preview. Have someone turn away, move into the frame edge, or step out. Check that the box disappears until the detector has enough consistent readings. Verify the single face marker with one person.
 

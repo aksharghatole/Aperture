@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -48,6 +49,7 @@ import com.aperture.photo.library.PhotoInformation
 import com.aperture.photo.library.readPhotoInformation
 import com.aperture.photo.library.Photo
 import com.aperture.photo.library.PhotoLibrary
+import com.aperture.photo.library.ThumbnailPreview
 import com.aperture.photo.library.filterFavoritePhotos
 import com.aperture.photo.library.PhotoSortMode
 import com.aperture.photo.library.CaptureTimeCache
@@ -57,8 +59,6 @@ import com.aperture.photo.library.SavedEditProblem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -71,7 +71,11 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
     var batchMessage by rememberSaveable { mutableStateOf<String?>(null) }
     val progress = operations.batchProgress
     val selectMode = selecting || progress != null
-    val favoriteNames = remember(operations.libraryRevision) { library.favoriteNames() }
+    var favoriteNames by remember { mutableStateOf(emptySet<String>()) }
+    LaunchedEffect(library, operations.libraryRevision) {
+        favoriteNames = withContext(Dispatchers.IO) { library.favoriteNames() }
+    }
+    val gridState = rememberLazyGridState()
     var favoritesOnly by rememberSaveable { mutableStateOf(false) }
     var sortMode by rememberSaveable { mutableStateOf(PhotoSortMode.IMPORT_NEWEST) }
     var sortMenuExpanded by remember { mutableStateOf(false) }
@@ -193,6 +197,7 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(112.dp),
+                state = gridState,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 12.dp)
@@ -266,18 +271,23 @@ private fun ImportResultsDialog(result: ImportResult, dismiss: () -> Unit) {
 
 private val SelectionSaver = listSaver<List<String>, String>(save = { it }, restore = { it })
 
-private val thumbnailReads = Semaphore(2)
-
 @Composable
 fun PhotoThumbnail(photo: Photo, library: PhotoLibrary, modifier: Modifier, description: String) {
-    var bitmap by remember(photo, library) { mutableStateOf<Bitmap?>(null) }
+    var thumbnail by remember(photo, library) { mutableStateOf<ThumbnailPreview?>(null) }
     LaunchedEffect(photo, library) {
-        bitmap = thumbnailReads.withPermit {
-            withContext(Dispatchers.IO) { runCatching { library.thumbnail(photo) }.getOrNull() }
-        }
+        thumbnail = library.thumbnailPreview(photo)
     }
     Box(modifier.background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
-        bitmap?.let { Image(it.asImageBitmap(), description, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+        val preview = thumbnail
+        val bitmap = preview?.bitmap
+        if (bitmap != null) {
+            val image = remember(bitmap) { bitmap.asImageBitmap() }
+            Image(image, description, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } else if (preview != null) {
+            Text("Preview unavailable", Modifier.padding(6.dp)
+                .semantics { contentDescription = "$description, preview unavailable" },
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

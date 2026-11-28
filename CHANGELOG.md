@@ -12,6 +12,7 @@
 
 - Added camera exposure compensation in EV steps when supported by the active lens, with reset and failure feedback.
 - Added an opt-in live camera luma histogram and sampled-preview shadow/highlight estimates, capability-gated on frame analysis.
+- Added optional spoken and haptic composition cues that use fresh, consistent preview evidence.
 - Added capability-gated tap autofocus with a positioned progress/result reticle and stale request cancellation.
 - Added an optional cancellable 3- or 10-second shutter countdown with snapshotted film/camera settings and haptic ticks.
 - Added capability-gated still flash Off/Auto/On and torch modes; torch is disabled on camera rebind and shutdown.
@@ -22,6 +23,7 @@
 - Added import-date and EXIF capture-date sorting options to the library.
 - Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
 - Added multi-photo imports with progress, a stop control, per-file outcomes, and limits for low storage and oversized inputs.
+- Cached recent library thumbnails, moved photo listing off the UI thread, and preserved scroll position across navigation.
 - Added persistent camera guide choices for automatic, thirds, center, diagonal, golden-ratio, and off overlays.
 - Added explicit composition targets and a manual subject marker separate from tap focus.
 - Added a Darkroom photo information panel with original pixel dimensions, format, file size and date, and available EXIF capture details.
