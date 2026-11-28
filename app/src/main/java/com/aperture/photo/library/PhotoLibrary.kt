@@ -32,6 +32,7 @@ class PhotoLibrary(private val context: Context) {
     private val favoritesFile = AtomicFile(File(context.filesDir, "photo-favorites"))
     internal val presets = PresetStore(File(context.filesDir, "analog-presets"))
     private val resolver = context.contentResolver
+    private val thumbnailCache = ThumbnailCache()
 
     fun favoriteNames(): Set<String> = synchronized(favoritesLock) {
         val stored = runCatching { FavoriteIndexCodec.decode(favoritesFile.readFully()) }.getOrDefault(emptySet())
@@ -217,6 +218,7 @@ class PhotoLibrary(private val context: Context) {
         try {
             output.write(EditHistoryCodec.encode(history).toByteArray(Charsets.UTF_8))
             file.finishWrite(output)
+            thumbnailCache.invalidate(photo.file)
         } catch (failure: Throwable) {
             file.failWrite(output)
             throw failure
@@ -227,6 +229,7 @@ class PhotoLibrary(private val context: Context) {
         check(photo.file.parentFile == directory) { "Photo does not belong to this library" }
         if (!photo.file.isFile) throw FileNotFoundException("Photo no longer exists")
         if (!photo.file.delete()) throw IOException("Could not remove the photo")
+        thumbnailCache.invalidate(photo.file)
         AtomicFile(File(directory, "${photo.file.name}.edits")).delete()
         synchronized(favoritesLock) { writeFavorites(favoriteNames() - photo.file.name) }
     }
@@ -254,6 +257,9 @@ class PhotoLibrary(private val context: Context) {
         val editFileLock = Any()
         val favoritesLock = Any()
     }
+
+    internal suspend fun thumbnailPreview(photo: Photo): ThumbnailPreview =
+        thumbnailCache.load(photo.file) { thumbnail(photo) }
 
     internal fun thumbnail(photo: Photo): Bitmap {
         val recipe = try {
