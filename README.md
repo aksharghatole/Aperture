@@ -16,4 +16,4 @@ You’ll need JDK 17 or 21 and Android SDK Platform 35. Build and check the app 
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-GitHub Actions also builds a debug APK for testing. See [Actions](https://github.com/aksharghatole/Aperture/actions), the [roadmap](ROADMAP.md), or the [project reference](README-REFERENCE.md) for more detail.
+GitHub Actions also builds a debug APK for testing. Versioned, signed APK releases can be published from GitHub Releases; see the [release setup](README-REFERENCE.md#installing-and-updating-release-apks). See [Actions](https://github.com/aksharghatole/Aperture/actions), the [roadmap](ROADMAP.md), or the [project reference](README-REFERENCE.md) for more detail.
