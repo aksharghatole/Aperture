@@ -45,6 +45,8 @@ The camera assistant uses frame luminance, a heuristic for concentrated image de
 
 Open **Target** in the camera guide controls to choose Auto, Center, or one of the four thirds intersections. Auto uses the current shooting mode and available scene estimates. **Mark subject manually** lets you tap to draw a fixed viewfinder box. The box stays at that screen position while you compose. Clear or move it from the same menu. A camera rebind, zoom change, or leaving the camera clears the box. Regular taps still focus the camera.
 
+**Steadiness** estimates whether the phone is moving using both its gyroscope and linear-acceleration sensor. **Steady shot** explicitly arms just one photo when the timer is off and the camera is ready. It requires at least 900 ms of fresh low-motion readings after arming and times out after 10 seconds. The shutter, Back, camera-setting changes that affect the shot, and leaving the viewfinder cancel the request. If either sensor is missing or stops reporting, Aperture cannot establish steadiness; use the ordinary shutter. This does not detect subject movement, focus accuracy, or guarantee a sharp photo.
+
 ## Imported images and JPEG transparency
 
 Use **Import** in Library to pick up to 50 images at a time. A single successful import opens in Darkroom. For a batch, Library shows the result for each processed file. **Stop** finishes the current file and skips the rest. Imports copy up to 256 MiB per file and keep a free storage reserve.
@@ -62,6 +64,8 @@ Library keeps recently rendered thumbnails in a bounded memory cache and restore
 ## Device verification
 
 Use **Cues** in the viewfinder controls to enable spoken or haptic composition guidance. Both start off. Spoken cues use an installed offline English voice. Haptic cues follow system touch feedback settings. Aim uses one tick, level uses two, and lighting uses a click. Stable cues pause while using a manual subject marker, setting up a shot, or leaving the camera.
+
+For steady shutter verification, hold the device still and confirm precisely one capture after arming. Move the phone before the hold completes and verify that it waits; continue moving until timeout. Arm again, tap focus or change zoom, switch lenses, press the shutter or Back, and background the app: confirm no delayed capture. On a device missing either motion sensor, check that steady shutter is unavailable and normal capture still works. Motion thresholds and real-world sharpness require physical-device calibration.
 
 For cue verification, enable each option and hold a scene with a clear aim or level correction. Confirm that changing the framing or backgrounding Aperture stops speech, and that the visual hint stays available with cues off or without an offline voice or vibration motor. Check with airplane mode enabled.
 

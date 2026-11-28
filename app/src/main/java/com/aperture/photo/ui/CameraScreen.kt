@@ -68,6 +68,9 @@ import com.aperture.photo.camera.ExposureSuggestion
 import com.aperture.photo.camera.ExposureStability
 import com.aperture.photo.camera.SmartExposure
 import com.aperture.photo.camera.ShootingCoach
+import com.aperture.photo.camera.Steadiness
+import com.aperture.photo.camera.SteadinessTracker
+import com.aperture.photo.camera.FocusStatus
 import com.aperture.photo.camera.FocusFeedback
 import com.aperture.photo.camera.ReferenceAlignment
 import com.aperture.photo.camera.SelfTimer
@@ -94,6 +97,11 @@ private data class PendingShutter(
     val countdown: SelfTimerCountdown,
     val film: Film,
     val session: CameraSession
+)
+
+private data class SteadyShot(
+    val armedAt: Long, val session: CameraSession, val film: Film, val mode: ShootingMode,
+    val zoom: Float, val exposureIndex: Int?, val flash: CameraFlashMode?, val timer: Int
 )
 
 @Composable
@@ -155,6 +163,9 @@ internal fun CameraScreen(
         mutableStateOf(cameraPreferences.getBoolean("exposure_diagnostics_enabled", false))
     }
     var coachOpen by rememberSaveable { mutableStateOf(false) }
+    var steadyShot by remember { mutableStateOf<SteadyShot?>(null) }
+    var steadyMessage by remember { mutableStateOf<String?>(null) }
+    val motion = rememberMotionMonitor(granted && ready)
     var assistMode by rememberSaveable { mutableStateOf(ExposureAssistMode.GUIDED) }
     // Auto is explicitly armed for one correction, never a feedback loop.
     var autoArmed by rememberSaveable { mutableStateOf(false) }
@@ -163,7 +174,7 @@ internal fun CameraScreen(
     val stability = remember(session, mode, zoom.ratio, exposure?.index, assistMode, autoArmed) { ExposureStability() }
     var suggestion by remember(stability) { mutableStateOf<ExposureSuggestion?>(null) }
     val assistAllowed = granted && ready && analysisAvailable && !busy && pendingShutter == null &&
-        !aligningReference && !markingSubject && !referenceDialogOpen && !cueSettingsOpen && !coachOpen && !assistUpdating
+        !aligningReference && !markingSubject && !referenceDialogOpen && !cueSettingsOpen && !coachOpen && !assistUpdating && steadyShot == null
     val suggestedIndex = suggestion?.let { SmartExposure.target(it, exposure) }
 
     fun applyExposureAdvice(target: Int) {
@@ -219,6 +230,42 @@ internal fun CameraScreen(
             assistMessage = null
         }
     }
+    val steadyAllowed = granted && ready && !busy && !assistUpdating && !autoArmed &&
+        pendingShutter == null && timerSeconds == 0 && !aligningReference && !markingSubject &&
+        !referenceDialogOpen && !cueSettingsOpen && !coachOpen && flashState?.updating != true &&
+        focusFeedback?.status != FocusStatus.PENDING && focusFeedback?.status != FocusStatus.METERING
+    val currentSteadyAllowed by rememberUpdatedState(steadyAllowed)
+    val currentSettingsMatch by rememberUpdatedState(steadyShot?.let {
+        it.session === session && it.film == film && it.mode == mode && it.zoom == zoom.ratio &&
+            it.exposureIndex == exposure?.index && it.flash == flashState?.mode && it.timer == timerSeconds
+    } == true)
+    fun cancelSteadyShot(message: String = "Steady shot cancelled.") {
+        steadyShot = null
+        steadyMessage = message
+    }
+    LaunchedEffect(steadyShot) {
+        val shot = steadyShot ?: return@LaunchedEffect
+        while (steadyShot === shot) {
+            val now = SystemClock.elapsedRealtime()
+            if (!currentSteadyAllowed || !currentSettingsMatch ||
+                !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+                !motion.tracker.available) {
+                cancelSteadyShot()
+                break
+            }
+            if (now - shot.armedAt >= SteadinessTracker.ShotTimeoutMillis) {
+                cancelSteadyShot("Steady shot timed out. Try again or use the shutter.")
+                break
+            }
+            if (motion.tracker.canCapture(shot.armedAt, now)) {
+                steadyShot = null
+                steadyMessage = null
+                operations.capture(shot.film, shot.session::takePhoto)
+                break
+            }
+            delay(75)
+        }
+    }
     val roll = if (granted) deviceRoll() else null
     val advice = Composition.advice(scene, roll, mode, analysisAvailable, anchor, manualSubject != null)
     val cueAvailability = CameraCueFeedback(
@@ -234,6 +281,7 @@ internal fun CameraScreen(
     )
 
     fun requestShutter() {
+        if (steadyShot != null) { cancelSteadyShot(); return }
         if (pendingShutter != null) {
             pendingShutter = null
             return
@@ -245,15 +293,16 @@ internal fun CameraScreen(
         else pendingShutter = PendingShutter(SelfTimer.start(++timerRequestId, timerSeconds), film, active)
     }
 
-    BackHandler(enabled = busy || pendingShutter != null || aligningReference || markingSubject) {
-        if (pendingShutter != null) pendingShutter = null
+    BackHandler(enabled = busy || steadyShot != null || pendingShutter != null || aligningReference || markingSubject) {
+        if (steadyShot != null) cancelSteadyShot()
+        else if (pendingShutter != null) pendingShutter = null
         else if (aligningReference) aligningReference = false
         else if (markingSubject) markingSubject = false
     }
 
     val dispatchVolumeShutter by rememberUpdatedState {
         if (!VolumeShutterPolicy.shouldCapture(volumeShutterEnabled, ready, granted, busy || assistUpdating || coachOpen, session != null,
-                if (pendingShutter == null) 0 else 1)) false
+                if (pendingShutter == null && steadyShot == null) 0 else 1)) false
         else {
             requestShutter()
             true
@@ -306,6 +355,8 @@ internal fun CameraScreen(
             if (event == Lifecycle.Event.ON_RESUME) granted = cameraPermission(context)
             else if (event == Lifecycle.Event.ON_PAUSE) {
                 pendingShutter = null
+                steadyShot = null
+                steadyMessage = null
                 markingSubject = false
                 manualSubject = null
                 autoArmed = false
@@ -337,6 +388,7 @@ internal fun CameraScreen(
                                 canFlip = flip
                                 analysisAvailable = hasAnalysis
                                 if (!active) {
+                                    steadyShot = null
                                     reading = null
                                     pendingShutter = null
                                     markingSubject = false
@@ -353,6 +405,7 @@ internal fun CameraScreen(
                         }, { exposure = it }, { focusFeedback = it }, { flashState = it }, { error = it })
                         session = connection
                         onDispose {
+                            steadyShot = null
                             connection.close()
                             reading = null
                             session = null
@@ -400,10 +453,10 @@ internal fun CameraScreen(
                     } else {
                         Modifier.pointerInput(session) {
                             detectTransformGestures { _, _, zoomChange, _ ->
-                                if (zoomChange != 1f) session?.zoomBy(zoomChange)
+                                if (zoomChange != 1f) { steadyShot = null; session?.zoomBy(zoomChange) }
                             }
                         }.pointerInput(session) {
-                            detectTapGestures { tap -> session?.focus(tap.x / size.width, tap.y / size.height) }
+                            detectTapGestures { tap -> steadyShot = null; session?.focus(tap.x / size.width, tap.y / size.height) }
                         }
                     }
                     GuideOverlay(scene, roll, mode, guide, anchor, manualSubject, markingSubject,
@@ -434,6 +487,7 @@ internal fun CameraScreen(
                     } else Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         val hint = if (markingSubject) "Tap the subject to mark it · Back to cancel"
+                        else if (steadyShot != null) "Steady shot · ${motion.status.label} · shutter cancels"
                         else captureMessage ?: advice.text
                         Text(hint, color = Color.White, fontSize = 13.sp,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .75f))
@@ -474,6 +528,7 @@ internal fun CameraScreen(
                 ShootingMode.entries.forEach { item ->
                     FilterChip(selected = item == mode, onClick = {
                         if (mode != item) {
+                            steadyShot = null
                             reading = null
                             autoArmed = false
                             assistMessage = null
@@ -486,10 +541,35 @@ internal fun CameraScreen(
             }
             TextButton(enabled = ready && !busy && pendingShutter == null && !assistUpdating &&
                 !markingSubject && !aligningReference, onClick = {
+                    steadyShot = null
                     autoArmed = false
                     coachOpen = true
                 }) { Text("Shooting coach · ${mode.title}") }
-            FilmPicker(film) { film = it; operations.clearCaptureMessage() }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Steadiness", style = MaterialTheme.typography.titleSmall)
+                    Text(motion.status.label, style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(enabled = steadyShot != null || (steadyAllowed && motion.status != Steadiness.UNAVAILABLE),
+                    onClick = {
+                    if (steadyShot != null) cancelSteadyShot()
+                    else if (steadyAllowed && motion.tracker.available) {
+                        session?.let {
+                            steadyMessage = null
+                            steadyShot = SteadyShot(SystemClock.elapsedRealtime(), it, film, mode,
+                                zoom.ratio, exposure?.index, flashState?.mode, timerSeconds)
+                        }
+                    }
+                }) { Text(if (steadyShot == null) "Steady shot" else "Cancel") }
+            }
+            Text(if (timerSeconds != 0) "Turn the timer off to use steady shot."
+                else "One photo after a steady hold; subject motion can still blur.",
+                style = MaterialTheme.typography.bodySmall)
+            steadyMessage?.let {
+                Text(it, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    style = MaterialTheme.typography.bodySmall)
+            }
+            FilmPicker(film) { steadyShot = null; film = it; operations.clearCaptureMessage() }
             Text("Exposure assistant", style = MaterialTheme.typography.titleSmall)
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -497,6 +577,7 @@ internal fun CameraScreen(
                     FilterChip(selected = assistMode == choice,
                         enabled = ready && !busy && pendingShutter == null && !assistUpdating,
                         onClick = {
+                            steadyShot = null
                             stability.clear()
                             suggestion = null
                             assistMode = choice
@@ -545,7 +626,7 @@ internal fun CameraScreen(
                     CameraFlashMode.choices(supported = true).forEach { item ->
                         FilterChip(selected = state.mode == item,
                             enabled = ready && !busy && pendingShutter == null && !state.updating,
-                            onClick = { session?.setFlashMode(item) }, label = { Text(item.title) })
+                            onClick = { steadyShot = null; session?.setFlashMode(item) }, label = { Text(item.title) })
                     }
                     if (state.updating) Text("Changing…", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 10.sp) }
@@ -557,6 +638,7 @@ internal fun CameraScreen(
                 listOf(0, 3, 10).forEach { seconds ->
                     FilterChip(selected = timerSeconds == seconds, enabled = pendingShutter == null && !busy,
                         onClick = {
+                            steadyShot = null
                             timerSeconds = seconds
                             cameraPreferences.edit().putInt("shutter_timer_seconds", seconds).apply()
                         }, label = { Text(if (seconds == 0) "Off" else "${seconds}s") })
@@ -587,12 +669,13 @@ internal fun CameraScreen(
                 CameraFramingMenu(anchor, manualSubject != null, !busy && pendingShutter == null,
                     canMark = ready, selectAnchor = { anchor = it }, mark = {
                         aligningReference = false
+                        steadyShot = null
                         markingSubject = true
                     }, clear = {
                         markingSubject = false
                         manualSubject = null
                     })
-                TextButton(enabled = !busy && pendingShutter == null, onClick = { cueSettingsOpen = true },
+                TextButton(enabled = !busy && pendingShutter == null, onClick = { steadyShot = null; cueSettingsOpen = true },
                     modifier = Modifier.semantics { contentDescription = "Composition cues settings" }) {
                     Text("Cues")
                 }
@@ -617,7 +700,7 @@ internal fun CameraScreen(
                 Text("Zoom ${"%.1f".format(zoom.ratio)}×", color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp)
                 zoom.presets().forEach { preset ->
-                    TextButton(enabled = ready && !busy, onClick = { session?.setZoomRatio(preset) },
+                    TextButton(enabled = ready && !busy, onClick = { steadyShot = null; session?.setZoomRatio(preset) },
                         modifier = Modifier.semantics { contentDescription = "Zoom to ${preset.toInt()} times" }) {
                         Text("${preset.toInt()}×")
                     }
@@ -629,6 +712,7 @@ internal fun CameraScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                     Spacer(Modifier.weight(1f))
                     TextButton(enabled = current.index != 0 && !busy && !assistUpdating && pendingShutter == null, onClick = {
+                        steadyShot = null
                         assistMode = ExposureAssistMode.MANUAL
                         autoArmed = false
                         assistMessage = null
@@ -642,6 +726,7 @@ internal fun CameraScreen(
                 Slider(
                     value = current.index.toFloat(),
                     onValueChange = { value ->
+                        steadyShot = null
                         assistMode = ExposureAssistMode.MANUAL
                         autoArmed = false
                         assistMessage = null
@@ -665,7 +750,7 @@ internal fun CameraScreen(
                 Text("Camera exposure update failed.", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
             }
             TextButton(enabled = ready && !busy && pendingShutter == null && !aligningReference && !markingSubject,
-                onClick = { session?.focus(.5f, .5f) }) { Text("Focus center") }
+                onClick = { steadyShot = null; session?.focus(.5f, .5f) }) { Text("Focus center") }
             TextButton(modifier = Modifier.semantics {
                 stateDescription = if (volumeShutterEnabled) "On" else "Off"
             }, onClick = {
@@ -684,31 +769,35 @@ internal fun CameraScreen(
             Box(Modifier.size(66.dp), contentAlignment = Alignment.Center) {
                 if (latest != null) {
                     Box(Modifier.size(49.dp).clip(RoundedCornerShape(10.dp)).clickable(
-                        enabled = !busy, role = Role.Button, onClickLabel = "Open library", onClick = openLibrary
+                        enabled = !busy, role = Role.Button, onClickLabel = "Open library", onClick = { steadyShot = null; openLibrary() }
                     )) {
                         PhotoThumbnail(latest, library, Modifier.fillMaxSize(), "Last photo")
                     }
                 } else {
-                    TextButton(enabled = !busy, onClick = openLibrary) { Text("Photos", fontSize = 11.sp) }
+                    TextButton(enabled = !busy, onClick = { steadyShot = null; openLibrary() }) { Text("Photos", fontSize = 11.sp) }
                 }
             }
             val shutterColor = MaterialTheme.colorScheme.primary.copy(alpha = if (ready) 1f else .36f)
             Box(
                 Modifier.size(66.dp).border(1.dp, shutterColor, CircleShape).clip(CircleShape)
-                    .semantics { contentDescription = if (pendingShutter == null) "Shutter" else "Cancel timer" }
+                    .semantics { contentDescription = if (steadyShot != null) "Cancel steady shot"
+                        else if (pendingShutter == null) "Shutter" else "Cancel timer" }
                     .clickable(enabled = ready && !busy && !assistUpdating, role = Role.Button,
-                        onClickLabel = if (pendingShutter == null) "Take photo" else "Cancel timer") {
+                        onClickLabel = if (steadyShot != null) "Cancel steady shot"
+                            else if (pendingShutter == null) "Take photo" else "Cancel timer") {
                         requestShutter()
                     },
                 contentAlignment = Alignment.Center
             ) {
                 if (busy) CircularProgressIndicator(Modifier.size(29.dp), strokeWidth = 2.dp)
+                else if (steadyShot != null) Text("Stop", color = Color.White, fontSize = 11.sp)
                 else if (pendingShutter != null) Text("${pendingShutter!!.countdown.secondsRemaining}",
                     color = Color.White, fontWeight = FontWeight.SemiBold)
                 else Box(Modifier.size(53.dp).background(shutterColor, CircleShape))
             }
             Box(Modifier.size(66.dp), contentAlignment = Alignment.Center) {
                 if (canFlip) TextButton(enabled = !busy && pendingShutter == null, onClick = {
+                    steadyShot = null
                     operations.clearCaptureMessage()
                     session?.flip()
                 }) { Text("Flip", fontSize = 11.sp) }
@@ -726,13 +815,14 @@ internal fun CameraScreen(
                     letterSpacing = (-1).sp, modifier = Modifier.weight(1f))
                 Row(Modifier.weight(1.5f, fill = false).horizontalScroll(rememberScrollState())) {
                     if (granted) TextButton(enabled = !busy, onClick = {
+                        steadyShot = null
                         aligningReference = false
                         markingSubject = false
                         referenceDialogOpen = true
                     }) {
                         Text("Reference")
                     }
-                    TextButton(enabled = !busy, onClick = openLibrary) { Text("Library") }
+                    TextButton(enabled = !busy, onClick = { steadyShot = null; openLibrary() }) { Text("Library") }
                 }
             }
             if (wideLayout) {
