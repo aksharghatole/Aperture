@@ -22,6 +22,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -43,6 +44,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -354,7 +358,11 @@ internal fun CameraScreen(
                         else captureMessage ?: advice.text
                         Text(hint, color = Color.White, fontSize = 13.sp,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .75f))
-                                .padding(horizontal = 14.dp, vertical = 8.dp))
+                                .padding(horizontal = 14.dp, vertical = 8.dp).then(
+                                    if (captureMessage != null && !markingSubject) Modifier.semantics {
+                                        liveRegion = LiveRegionMode.Polite
+                                    } else Modifier
+                                ))
                     }
                 } else if (error == null) {
                     if (busy) Text("Finishing capture…", Modifier.align(Alignment.Center))
@@ -513,9 +521,13 @@ internal fun CameraScreen(
                 )
             }
             if (exposureError) {
-                Text("Camera exposure update failed.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
+                Text("Camera exposure update failed.", modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
             }
-            TextButton(onClick = {
+            TextButton(enabled = ready && !busy && pendingShutter == null && !aligningReference && !markingSubject,
+                onClick = { session?.focus(.5f, .5f) }) { Text("Focus center") }
+            TextButton(modifier = Modifier.semantics {
+                stateDescription = if (volumeShutterEnabled) "On" else "Off"
+            }, onClick = {
                 volumeShutterEnabled = !volumeShutterEnabled
                 cameraPreferences.edit().putBoolean("volume_shutter_enabled", volumeShutterEnabled).apply()
             }) {
@@ -523,7 +535,10 @@ internal fun CameraScreen(
             }
         }
 
-        Row(Modifier.fillMaxWidth().height(90.dp), verticalAlignment = Alignment.CenterVertically,
+    }
+
+    val shutterControls: @Composable () -> Unit = {
+        Row(Modifier.fillMaxWidth().heightIn(min = 72.dp), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween) {
             Box(Modifier.size(66.dp), contentAlignment = Alignment.Center) {
                 if (latest != null) {
@@ -564,10 +579,11 @@ internal fun CameraScreen(
         val wideLayout = maxWidth > maxHeight * 1.24f
         val controlsWidth = (maxWidth * .43f).coerceAtMost(280.dp)
         Column(Modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().height(if (wideLayout) 48.dp else 60.dp),
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Aperture", fontSize = 27.sp, fontWeight = FontWeight.Medium, letterSpacing = (-1).sp)
-                Row {
+                Text("Aperture", fontSize = 27.sp, fontWeight = FontWeight.Medium,
+                    letterSpacing = (-1).sp, modifier = Modifier.weight(1f))
+                Row(Modifier.weight(1.5f, fill = false).horizontalScroll(rememberScrollState())) {
                     if (granted) TextButton(enabled = !busy, onClick = {
                         aligningReference = false
                         markingSubject = false
@@ -582,11 +598,17 @@ internal fun CameraScreen(
                 Row(Modifier.weight(1f).fillMaxWidth().padding(bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     viewfinder(Modifier.weight(1f).fillMaxHeight())
-                    Column(Modifier.width(controlsWidth)) { controls() }
+                    Column(Modifier.width(controlsWidth).fillMaxHeight()) {
+                        if (granted) Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) { controls() }
+                        else Spacer(Modifier.weight(1f))
+                        shutterControls()
+                    }
                 }
             } else {
                 viewfinder(Modifier.weight(1f).fillMaxWidth())
-                controls()
+                if (granted) Column(Modifier.weight(1f, fill = false).fillMaxWidth()
+                    .verticalScroll(rememberScrollState())) { controls() }
+                shutterControls()
             }
         }
     }
