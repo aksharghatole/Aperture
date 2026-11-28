@@ -35,6 +35,8 @@ Portrait mode uses Android’s offline frontal face detector. A single face show
 
 The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device. If camera analysis stalls or returns an invalid frame, Aperture drops its scene cues and keeps manual guides available.
 
+Open **Target** in the camera guide controls to choose Auto, Center, or one of the four thirds intersections. Auto uses the current shooting mode and available scene estimates. **Mark subject manually** lets you tap to draw a fixed viewfinder box. The box stays at that screen position while you compose. Clear or move it from the same menu. A camera rebind, zoom change, or leaving the camera clears the box. Regular taps still focus the camera.
+
 ## Imported images and JPEG transparency
 
 Use **Import** in Library to pick up to 50 images at a time. A single successful import opens in Darkroom. For a batch, Library shows the result for each processed file. **Stop** finishes the current file and skips the rest. Imports copy up to 256 MiB per file and keep a free storage reserve.

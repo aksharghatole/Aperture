@@ -3,6 +3,7 @@
 - [x] Add CameraX exposure compensation with capability-gated controls.
 - [x] Add capability-gated pinch zoom and supported zoom presets.
 - [x] Add switchable composition guides independent of shooting mode.
+- [x] Let photographers choose a framing target and place a manual subject marker.
 - [x] Add locally stored photo favorites and a favorites-only library filter.
 - [x] Add optional per-channel RGB histograms and clipping estimates.
 - [x] Add a read-only photo information panel in Darkroom.
