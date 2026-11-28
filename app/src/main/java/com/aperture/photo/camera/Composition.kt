@@ -34,7 +34,8 @@ data class Scene(
     val highlightFraction: Float,
     val focus: FocusRegion?,
     val portraitEyes: FocusRegion? = null,
-    val exposureDiagnostics: ExposureDiagnostics? = null
+    val exposureDiagnostics: ExposureDiagnostics? = null,
+    val portraitGroup: PortraitGroup? = null
 )
 
 /** Finds a dominant cluster of detail in the preview. This is not object recognition. */
@@ -121,13 +122,16 @@ object Composition {
         if (framing == Framing.HORIZON) {
             return if (roll == null) "Use the grid to judge the horizon" else "Camera level"
         }
-        val focus = (if (portrait) scene.portraitEyes else scene.focus) ?: return manualGuide
+        val group = if (portrait) scene.portraitGroup else null
+        val focus = group?.eyeCenter ?: (if (portrait) scene.portraitEyes else scene.focus) ?: return manualGuide
         val x = if (framing == Framing.THIRDS && focus.x > .5f) 1f - framing.anchorX else framing.anchorX
         val dx = focus.x - x
-        val dy = focus.y - framing.anchorY
+        val targetY = group?.fitTargetY(framing.anchorY) ?: framing.anchorY
+        val dy = focus.y - targetY
         return when {
             abs(dx) > aimTolerance && abs(dx) >= abs(dy) -> if (dx > 0) "Aim a little right" else "Aim a little left"
             abs(dy) > aimTolerance -> if (dy > 0) "Aim a little lower" else "Aim a little higher"
+            group != null -> "Group detected · check framing"
             else -> if (portrait) "Eyes near the framing guide" else "Detail near the framing guide"
         }
     }

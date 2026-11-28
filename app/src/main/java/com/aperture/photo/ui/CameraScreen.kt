@@ -596,6 +596,13 @@ private fun GuideOverlay(scene: Scene?, roll: Float?, mode: ShootingMode, guide:
             drawCircle(Color.Black.copy(alpha = .65f), 8.dp.toPx(), point)
             drawCircle(accent, 5.dp.toPx(), point, style = androidx.compose.ui.graphics.drawscope.Stroke(1.4.dp.toPx()))
         }
+        if (mode == ShootingMode.PORTRAIT) scene?.portraitGroup?.let { group ->
+            val topLeft = Offset(group.left * size.width, group.top * size.height)
+            val region = Size((group.right - group.left) * size.width, (group.bottom - group.top) * size.height)
+            drawRect(Color.Black.copy(alpha = .65f), topLeft, region,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+            drawRect(accent, topLeft, region, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        }
         if (framing == Framing.HORIZON) drawLine(white, Offset(0f, center.y), Offset(size.width, center.y))
         if (roll != null) {
             val angle = Math.toRadians(roll.toDouble())
