@@ -49,7 +49,9 @@ class EditHistoryCodecTest {
 
     @Test fun roundTripsGrainInSavedHistory() {
         val history = EditHistory(Recipe()).commit(Recipe(grainIntensity = .65f, grainSize = .8f))
-        assertEquals(history, EditHistoryCodec.decode(EditHistoryCodec.encode(history)))
+        val restored = EditHistoryCodec.decode(EditHistoryCodec.encode(history))!!
+        assertEquals(history.snapshots, restored.snapshots)
+        assertEquals(history.cursor, restored.cursor)
     }
 
     @Test fun loadsVersionThreeWithNeutralCurves() {
