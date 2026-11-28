@@ -90,10 +90,10 @@ class PhotoWorkflowTest {
             val maxEdge = checkNotNull(guarded.suggestedMaxEdge)
             val reduced = PhotoRenderer.decodeForExport(input, Recipe(), maxEdge, budget)
             try {
-                assertTrue(reduced.width <= maxEdge)
-                assertTrue(reduced.height < fixture.height)
+                assertTrue(reduced.bitmap.width <= maxEdge)
+                assertTrue(reduced.bitmap.height < fixture.height)
             } finally {
-                reduced.recycle()
+                reduced.bitmap.recycle()
             }
         } finally {
             fixture.recycle()

@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
+import com.aperture.photo.imaging.ExportSettings
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
@@ -69,6 +70,7 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable(stateSaver = SelectionSaver) { mutableStateOf(emptyList<String>()) }
     var batchMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    var showBatchExportOptions by rememberSaveable { mutableStateOf(false) }
     val progress = operations.batchProgress
     val selectMode = selecting || progress != null
     var favoriteNames by remember { mutableStateOf(emptySet<String>()) }
@@ -124,8 +126,14 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
 
     fun exportSelected() {
         if (pending.isEmpty() || progress != null) return
-        batchMessage = null
-        operations.exportBatch(pending)
+        showBatchExportOptions = true
+    }
+    if (showBatchExportOptions && pending.isNotEmpty() && progress == null) {
+        ExportOptions(library, pending, onClose = { showBatchExportOptions = false }) { settings ->
+            showBatchExportOptions = false
+            batchMessage = null
+            operations.exportBatch(pending, settings)
+        }
     }
 
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents(), operations::importPhotos)
@@ -343,8 +351,8 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
     val currentExport = operations.editorExport?.takeIf { it.photo == photo }
     val exportRecipe = if (savedEditProblem == null) recipe else Recipe()
     val shareUri = currentExport?.result?.matching(exportRecipe)
-    val smallerExport = currentExport?.smallerEdge?.let { currentExport.snapshot to it }
-    val reducedExport = currentExport?.reduced == true
+    val smallerExport = currentExport?.smallerEdge
+    var showExportOptions by rememberSaveable(photo.file.name) { mutableStateOf(false) }
     val exporting = currentExport?.running == true
     var deleting by remember(photo) { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -489,19 +497,27 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
         }
     }
 
-    fun startExport(snapshot: Recipe, maxEdge: Int? = null) {
+    fun startExport(snapshot: Recipe, settings: ExportSettings) {
         if (exporting || saving || deleting) return
         message = null
-        operations.export(photo, snapshot, maxEdge)
+        operations.export(photo, snapshot, settings)
     }
 
-    smallerExport?.let { (snapshot, edge) ->
+    if (showExportOptions && !exporting) {
+        ExportOptions(library, listOf(photo), exportRecipe, { showExportOptions = false }) { settings ->
+            showExportOptions = false
+            startExport(exportRecipe, settings)
+        }
+    }
+
+    smallerExport?.let { edge ->
+        val failedExport = checkNotNull(currentExport)
         AlertDialog(
             onDismissRequest = { operations.dismissExportOffer() },
             title = { Text("Export a smaller JPEG?") },
-            text = { Text("The requested size needs more memory. You can export a JPEG up to $edge px on its longest edge.") },
+            text = { Text("The requested size needs more memory. Export up to $edge px on the finished crop’s longest edge at quality ${failedExport.settings.quality}?") },
             confirmButton = {
-                TextButton(onClick = { startExport(snapshot, edge) }) { Text("Export smaller") }
+                TextButton(onClick = { startExport(failedExport.snapshot, failedExport.settings.copy(longEdge = edge)) }) { Text("Export smaller") }
             },
             dismissButton = {
                 TextButton(onClick = { operations.dismissExportOffer() }) { Text("Cancel") }
@@ -525,7 +541,7 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
                 }
                 TextButton(onClick = { showPhotoInfo = !showPhotoInfo }) { Text("Info") }
                 TextButton(enabled = editsLoaded && source != null && !exporting && !saving && !deleting, onClick = {
-                    startExport(exportRecipe)
+                    showExportOptions = true
                 }) { Text(if (savedEditProblem == null) "Export" else "Export original") }
             }
         }
@@ -660,7 +676,7 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             }
         }
         val completion = when {
-            shareUri != null -> if (reducedExport) "Smaller JPEG saved in Pictures/Aperture" else "Saved in Pictures/Aperture"
+            shareUri != null -> "JPEG saved in Pictures/Aperture"
             savedByUser && !history.differsFrom(lastSaved, draft) -> "Edits saved"
             else -> null
         }

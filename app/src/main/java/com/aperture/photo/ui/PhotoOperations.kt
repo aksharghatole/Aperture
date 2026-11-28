@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.aperture.photo.imaging.ExportMemoryException
 import com.aperture.photo.imaging.ExportReceipt
+import com.aperture.photo.imaging.ExportSettings
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.ImageInputException
 import com.aperture.photo.imaging.Recipe
@@ -34,9 +35,9 @@ internal data class ImportResult(val outcomes: List<ImportOutcome>, val skipped:
 internal data class EditorExport(
     val photo: Photo,
     val snapshot: Recipe,
+    val settings: ExportSettings = ExportSettings(),
     val running: Boolean = true,
     val result: ExportReceipt<Uri>? = null,
-    val reduced: Boolean = false,
     val smallerEdge: Int? = null,
     val message: String? = null
 )
@@ -149,16 +150,15 @@ internal class PhotoOperations(application: Application) : AndroidViewModel(appl
         }
     }
 
-    fun export(photo: Photo, snapshot: Recipe, maxEdge: Int?) {
+    fun export(photo: Photo, snapshot: Recipe, settings: ExportSettings = ExportSettings()) {
         if (busy) return
-        val started = EditorExport(photo, snapshot, message =
-            if (maxEdge == null) "Exporting full resolution…" else "Exporting a smaller JPEG…")
+        val started = EditorExport(photo, snapshot, settings, message =
+            if (settings.longEdge == null) "Exporting full resolution…" else "Exporting JPEG up to ${settings.longEdge} px…")
         editorExport = started
         viewModelScope.launch {
             editorExport = try {
-                val uri = withContext(Dispatchers.IO) { library.export(photo, snapshot, maxEdge) }
-                started.copy(running = false, result = ExportReceipt(snapshot, uri),
-                    reduced = maxEdge != null, message = null)
+                val uri = withContext(Dispatchers.IO) { library.export(photo, snapshot, settings) }
+                started.copy(running = false, result = ExportReceipt(snapshot, uri), message = null)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: ImageInputException) {
@@ -167,8 +167,8 @@ internal class PhotoOperations(application: Application) : AndroidViewModel(appl
                 started.copy(running = false, smallerEdge = failure.suggestedMaxEdge,
                     message = if (failure.suggestedMaxEdge == null) "There is not enough memory to export this photo." else null)
             } catch (_: OutOfMemoryError) {
-                started.copy(running = false, smallerEdge = if (maxEdge == null) 2048 else null,
-                    message = if (maxEdge == null) null else "There is not enough memory at the selected export size.")
+                started.copy(running = false,
+                    message = "There is not enough memory at the selected export size. Choose a smaller size.")
             } catch (_: Exception) {
                 started.copy(running = false, message = "Export failed. Check available storage and try again.")
             }
@@ -187,7 +187,7 @@ internal class PhotoOperations(application: Application) : AndroidViewModel(appl
         batchResult = null
     }
 
-    fun exportBatch(photos: List<Photo>) {
+    fun exportBatch(photos: List<Photo>, settings: ExportSettings = ExportSettings()) {
         if (busy || photos.isEmpty()) return
         batchResult = null
         batchProgress = BatchProgress(0, photos.size)
@@ -200,7 +200,7 @@ internal class PhotoOperations(application: Application) : AndroidViewModel(appl
                 for (photo in photos) {
                     if (batchProgress?.stopping == true) break
                     try {
-                        withContext(Dispatchers.IO) { library.exportSavedEdits(photo) }
+                        withContext(Dispatchers.IO) { library.exportSavedEdits(photo, settings) }
                         exported++
                     } catch (failure: CancellationException) {
                         throw failure
@@ -218,7 +218,7 @@ internal class PhotoOperations(application: Application) : AndroidViewModel(appl
                 val summary = buildString {
                     append("Exported ").append(exported).append(" of ").append(photos.size)
                     if (failures.isNotEmpty()) append(" · ").append(failures.size).append(" failed")
-                    if (memoryFailures > 0) append(" · Use Darkroom for smaller exports")
+                    if (memoryFailures > 0) append(" · Select a smaller export size and retry")
                     if (attempted < photos.size) append(" · ").append(photos.size - attempted).append(" stopped before export")
                     if (exported > 0) append(" · Pictures/Aperture")
                 }

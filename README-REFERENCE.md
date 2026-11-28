@@ -53,6 +53,8 @@ Aperture uses Android’s image decoder for still photos, including JPEG, PNG, a
 
 ## JPEG export policy
 
+Tap **Export** in Darkroom or after selecting photos in Library. Full resolution and JPEG quality 96 remain the defaults. Choose 2,048 px, 1,024 px, or a custom long edge (1–32,768 px) and quality from 1 to 100. The dialog shows each planned output’s dimensions after crop and rotation; smaller originals are never enlarged. JPEG file size depends on the image and is not known until encoding. Batch settings apply to each saved edit. If the chosen size exceeds the memory budget, Darkroom offers a strictly smaller long edge without changing the requested quality; batch failures stay selected for a retry.
+
 Exports are new sRGB JPEGs. Aperture converts embedded source profiles to sRGB before applying edits, then writes the crop and rotation into the pixels. Source EXIF orientation is applied when decoding. The exported JPEG carries no copied capture date, camera settings, camera identifiers, GPS coordinates, orientation, or source dimensions. Aperture keeps the original bytes and metadata in its local library.
 
 Library keeps recently rendered thumbnails in a bounded memory cache and restores the scroll position when you return from Darkroom or the camera. For library performance checks, the Android test suite measures listing and sampled viewport loads with 100, 1,000, and 5,000 synthetic local photos. Its timings cover the thumbnail workload. UI frame pacing depends on the device.
@@ -67,6 +69,8 @@ For group portraits, frame two to four people in Portrait mode with the rear and
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.
 
+For export settings: check full-resolution, 1,024 px, a custom size, and low/high quality on rotated and cropped originals. Export a batch with mixed aspect ratios and verify the displayed output dimensions, including an image smaller than the chosen limit. Verify that originals and histories are unchanged.
+
 For presets: save a look from a cropped photo, close and reopen the app, apply it to a different rotated/cropped photo, and check Undo/Redo. Rename and delete the preset, then confirm the saved photo edits and original are unchanged.
 
 For reference alignment:
@@ -79,7 +83,7 @@ Aperture checks for interrupted work on startup. It removes its recognized tempo
 
 CameraX refreshes preview, analysis, and capture when the display rotates, even if the viewfinder keeps the same dimensions. Camera luma fixtures cover the four rotations, front-camera mirroring, and cropped, padded camera buffers. Preview, tap-to-focus, and capture alignment still need verification on physical cameras across those rotations.
 
-Darkroom checks export dimensions before allocating full-resolution buffers. If the estimated memory exceeds the available budget, it offers a smaller JPEG and waits for confirmation. Batch export keeps photos that exceed the budget selected so they can be opened in Darkroom individually. At 12, 48, and 108 megapixels, the uncropped buffer estimate is about 153, 565, and 1,252 MiB respectively, including a 16 MiB allowance. These are estimates. Actual peak memory still needs measurement on a constrained Android device.
+Darkroom checks export dimensions before allocating full-resolution buffers. If the estimated memory exceeds the available budget, it offers a smaller JPEG and waits for confirmation. Batch export keeps photos that exceed the budget selected so you can retry with a smaller size. At 12, 48, and 108 megapixels, the uncropped buffer estimate is about 153, 565, and 1,252 MiB respectively, including a 16 MiB allowance. These are estimates. Actual peak memory still needs measurement on a constrained Android device.
 
 Captures and exports report their results after activity recreation. Aperture blocks navigation during a capture or a single export. In a batch, **Stop** or Back lets the current photo finish and leaves the rest selected. Camera interruptions can cancel an in-flight capture. A terminated app process uses the startup recovery rules described above.
 

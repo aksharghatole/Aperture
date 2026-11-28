@@ -69,7 +69,7 @@ class OperationLifecycleTest {
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
-                    ViewModelProvider(activity)[PhotoOperations::class.java].export(photo, recipe, null)
+                    ViewModelProvider(activity)[PhotoOperations::class.java].export(photo, recipe)
                 }
                 scenario.recreate()
                 val deadline = SystemClock.elapsedRealtime() + 15_000L

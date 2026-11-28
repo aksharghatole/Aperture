@@ -2,7 +2,6 @@ package com.aperture.photo.imaging
 
 import java.io.IOException
 import kotlin.math.ceil
-import kotlin.math.max
 
 internal class ExportMemoryException(val suggestedMaxEdge: Int?) :
     IOException("Estimated image buffers exceed the available export budget")
@@ -14,19 +13,16 @@ internal object ExportMemory {
     fun budget(maxHeap: Long, usedHeap: Long): Long =
         minOf(maxHeap / 3L * 2L, (maxHeap - usedHeap).coerceAtLeast(0L))
 
-    fun check(width: Int, height: Int, recipe: Recipe, maxEdge: Int?, budget: Long) {
-        require(width > 0 && height > 0 && (maxEdge == null || maxEdge > 0))
-        val longest = max(width, height)
-        val sample = if (maxEdge == null) 1 else sampleSize(longest, maxEdge)
-        if (estimate(width, height, recipe, sample) <= budget) return
+    fun check(width: Int, height: Int, recipe: Recipe, maxEdge: Int?, budget: Long): ExportPlan {
+        require(maxEdge == null || maxEdge > 0)
+        val original = ImageSize(width, height)
+        val requested = ExportPlan.create(original, recipe, maxEdge)
+        if (estimate(requested) <= budget) return requested
 
-        var next = sample
-        while (next < longest) {
-            next = (next.toLong() * 2).coerceAtMost(longest.toLong()).toInt()
-            if (estimate(width, height, recipe, next) <= budget) {
-                val edge = longest / next
-                throw ExportMemoryException(edge.takeIf { it > 0 })
-            }
+        var edge = requested.output.longest
+        while (edge > 1) {
+            edge = (edge / 2).coerceAtLeast(1)
+            if (estimate(ExportPlan.create(original, recipe, edge)) <= budget) throw ExportMemoryException(edge)
         }
         throw ExportMemoryException(null)
     }
@@ -35,17 +31,14 @@ internal object ExportMemory {
         ((longest.toLong() + maxEdge - 1L) / maxEdge).toInt().coerceAtLeast(1)
 
     fun estimate(width: Int, height: Int, recipe: Recipe, sample: Int = 1): Long {
-        val sampledWidth = ceil(width.toDouble() / sample).toInt()
-        val sampledHeight = ceil(height.toDouble() / sample).toInt()
-        val sideways = Math.floorMod(recipe.quarterTurns, 2) != 0
-        val crop = if (sideways) recipe.crop.pixels(sampledHeight, sampledWidth)
-            else recipe.crop.pixels(sampledWidth, sampledHeight)
+        val sampled = ImageSize(ceil(width.toDouble() / sample).toInt(), ceil(height.toDouble() / sample).toInt())
+        return estimate(ExportPlan.create(sampled, recipe, null))
+    }
 
+    fun estimate(plan: ExportPlan): Long {
         // Decoders can return 8-byte wide-gamut pixels. The render target uses ARGB_8888.
-        val sampledPixels = sampledWidth.toDouble() * sampledHeight
-        // Reserve extra codec and renderer workspace in proportion to the sampled image.
+        val sampledPixels = plan.decode.width.toDouble() * plan.decode.height
         val workspace = (BaseWorkspaceBytes + sampledPixels * 4).coerceAtMost(MaxWorkspaceBytes.toDouble())
-        val bytes = sampledPixels * 8 + crop.width.toDouble() * crop.height * 4 + workspace
-        return bytes.toLong()
+        return (sampledPixels * 8 + plan.output.width.toDouble() * plan.output.height * 4 + workspace).toLong()
     }
 }
