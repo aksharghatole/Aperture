@@ -18,6 +18,7 @@
 - Added zoom and pan for inspecting the Darkroom preview, with a shared position across Before and After.
 - Added import-date and EXIF capture-date sorting options to the library.
 - Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
+- Added multi-photo imports with progress, a stop control, per-file outcomes, and limits for low storage and oversized inputs.
 - Added persistent camera guide choices for automatic, thirds, center, diagonal, golden-ratio, and off overlays.
 - Added a Darkroom photo information panel with original pixel dimensions, format, file size and date, and available EXIF capture details.
 - Added an opt-in volume-key shutter shortcut, disabled by default and active only while the camera can capture.

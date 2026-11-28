@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -34,7 +35,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.aperture.photo.imaging.ImageInputException
 import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
@@ -64,9 +64,8 @@ import kotlinx.coroutines.withContext
 @Composable
 internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, back: () -> Unit, open: (Photo) -> Unit) {
     val library = operations.library
-    val scope = rememberCoroutineScope()
-    var importing by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
+    val importing = operations.importProgress
+    val importResult = operations.importResult
     var selecting by rememberSaveable { mutableStateOf(false) }
     var selected by rememberSaveable(stateSaver = SelectionSaver) { mutableStateOf(emptyList<String>()) }
     var batchMessage by rememberSaveable { mutableStateOf<String?>(null) }
@@ -94,8 +93,20 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
         selecting = false
     }
 
-    BackHandler(enabled = selectMode) {
-        if (operations.batchProgress == null) cancelSelection() else operations.stopBatch()
+    BackHandler(enabled = selectMode || importing != null) {
+        when {
+            importing != null -> operations.stopImport()
+            progress == null -> cancelSelection()
+            else -> operations.stopBatch()
+        }
+    }
+
+    LaunchedEffect(importResult) {
+        if (importResult != null && importResult.imported > 0) favoritesOnly = false
+        importResult?.openSingle?.let { photo ->
+            operations.consumeImportResult()
+            open(photo)
+        }
     }
 
     LaunchedEffect(operations.batchResult) {
@@ -113,37 +124,25 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
         operations.exportBatch(pending)
     }
 
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) scope.launch {
-            importing = true
-            error = null
-            try {
-                val photo = withContext(Dispatchers.IO) { library.import(uri) }
-                open(photo)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: ImageInputException) {
-                error = failure.message
-            } catch (_: Exception) {
-                error = "This image could not be opened. Check its access and try again."
-            } catch (_: OutOfMemoryError) {
-                error = "This image is too large to import."
-            } finally {
-                importing = false
-            }
-        }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents(), operations::importPhotos)
+
+    if (importResult != null && importResult.openSingle == null) {
+        ImportResultsDialog(importResult, operations::consumeImportResult)
     }
 
     Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
         ScreenHeader(if (selectMode) "${progress?.total ?: pending.size} selected" else "Library",
-            if (selectMode) "Done" else "Camera", {
-                if (!selectMode) back()
-                else if (progress == null) cancelSelection()
+            if (importing != null) "Stop" else if (selectMode) "Done" else "Camera", {
+                when {
+                    importing != null -> operations.stopImport()
+                    !selectMode -> back()
+                    progress == null -> cancelSelection()
+                }
             }) {
-            if (!selectMode) {
+            if (importing == null && !selectMode) {
                 Row {
                     Box {
-                        TextButton(enabled = !importing, onClick = { sortMenuExpanded = true }) { Text("Sort") }
+                        TextButton(onClick = { sortMenuExpanded = true }) { Text("Sort") }
                         DropdownMenu(expanded = sortMenuExpanded, onDismissRequest = { sortMenuExpanded = false }) {
                             PhotoSortMode.entries.forEach { option ->
                                 DropdownMenuItem(text = { Text(option.label) }, onClick = {
@@ -153,15 +152,15 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
                             }
                         }
                     }
-                    TextButton(enabled = !importing && photos.isNotEmpty(), onClick = {
+                    TextButton(enabled = photos.isNotEmpty(), onClick = {
                         selecting = true
                         batchMessage = null
                     }) { Text("Select") }
-                    TextButton(enabled = !importing, onClick = { picker.launch("image/*") }) { Text("Import") }
+                    TextButton(onClick = { picker.launch("image/*") }) { Text("Import") }
                 }
-            } else if (progress == null) {
+            } else if (selectMode && progress == null) {
                 TextButton(enabled = pending.isNotEmpty(), onClick = ::exportSelected) { Text("Export") }
-            } else {
+            } else if (progress != null) {
                 TextButton(enabled = !stopBatch, onClick = operations::stopBatch) { Text("Stop") }
             }
         }
@@ -180,8 +179,12 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
         batchMessage?.let {
             Text(it, modifier = Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall)
         }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 8.dp)) }
-        if (importing) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (importing != null) {
+            LinearProgressIndicator(progress = { importing.completed.toFloat() / importing.total }, Modifier.fillMaxWidth())
+            Text(if (importing.stopping) "Stopping after the current photo…" else
+                "Importing · ${importing.completed} of ${importing.total} processed",
+                modifier = Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+        }
         if (visiblePhotos.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(if (favoritesOnly) "No favorite photos yet." else "Take or import a photo to get started.",
@@ -203,7 +206,7 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
                             selected = if (it) selected + name else selected - name
                         }
                     } else {
-                        tile.clickable(onClickLabel = "Edit photo") { open(photo) }
+                        tile.clickable(enabled = importing == null, onClickLabel = "Edit photo") { open(photo) }
                     }
                     Box(interaction) {
                         PhotoThumbnail(photo, library, Modifier.fillMaxSize(), "${photo.film.title} photo")
@@ -223,6 +226,42 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
             }
         }
     }
+}
+
+@Composable
+private fun ImportResultsDialog(result: ImportResult, dismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = dismiss,
+        title = { Text("Import results") },
+        text = {
+            val error = result.error
+            if (error != null) {
+                Text(error)
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(buildString {
+                        append("${result.imported} imported")
+                        if (result.failed > 0) append(" · ${result.failed} failed")
+                        if (result.skipped > 0) append(" · ${result.skipped} skipped")
+                    })
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(result.outcomes.size) { index ->
+                            val outcome = result.outcomes[index]
+                            Column {
+                                Text(outcome.name, style = MaterialTheme.typography.labelLarge)
+                                Text(outcome.error ?: "Imported",
+                                    color = if (outcome.error == null) MaterialTheme.colorScheme.onSurfaceVariant
+                                    else MaterialTheme.colorScheme.error,
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = dismiss) { Text("Done") } }
+    )
 }
 
 private val SelectionSaver = listSaver<List<String>, String>(save = { it }, restore = { it })

@@ -14,6 +14,8 @@ import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.ImageInputException
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.library.Photo
+import com.aperture.photo.library.PhotoImport
+import com.aperture.photo.library.PhotoImportException
 import com.aperture.photo.library.PhotoLibrary
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -23,6 +25,12 @@ import kotlinx.coroutines.withContext
 
 internal data class BatchProgress(val completed: Int, val total: Int, val stopping: Boolean = false)
 internal data class BatchResult(val remaining: List<String>, val message: String)
+internal data class ImportOutcome(val name: String, val photo: Photo? = null, val error: String? = null)
+internal data class ImportResult(val outcomes: List<ImportOutcome>, val skipped: Int = 0, val error: String? = null) {
+    val imported: Int get() = outcomes.count { it.photo != null }
+    val failed: Int get() = outcomes.size - imported
+    val openSingle: Photo? get() = outcomes.singleOrNull()?.photo?.takeIf { skipped == 0 }
+}
 internal data class EditorExport(
     val photo: Photo,
     val snapshot: Recipe,
@@ -48,12 +56,67 @@ internal class PhotoOperations(application: Application) : AndroidViewModel(appl
         private set
     var batchResult by mutableStateOf<BatchResult?>(null)
         private set
+    var importProgress by mutableStateOf<BatchProgress?>(null)
+        private set
+    var importResult by mutableStateOf<ImportResult?>(null)
+        private set
 
-    private val busy: Boolean get() = captureBusy || editorExport?.running == true || batchProgress != null
+    private val busy: Boolean get() = captureBusy || editorExport?.running == true ||
+        batchProgress != null || importProgress != null
 
     fun libraryChanged() { libraryRevision++ }
 
     fun clearCaptureMessage() { if (!captureBusy) captureMessage = null }
+
+    fun stopImport() {
+        importProgress = importProgress?.copy(stopping = true)
+    }
+
+    fun consumeImportResult() {
+        importResult = null
+    }
+
+    fun importPhotos(selection: List<Uri>) {
+        if (busy || selection.isEmpty()) return
+        val selected = selection.asSequence().distinct().take(PhotoImport.MaxFiles + 1).toList()
+        if (selected.size > PhotoImport.MaxFiles) {
+            importResult = ImportResult(emptyList(), error = "Select up to ${PhotoImport.MaxFiles} photos per import.")
+            return
+        }
+        importResult = null
+        importProgress = BatchProgress(0, selected.size)
+        viewModelScope.launch {
+            val outcomes = ArrayList<ImportOutcome>(selected.size)
+            try {
+                for ((index, uri) in selected.withIndex()) {
+                    if (importProgress?.stopping == true) break
+                    outcomes.add(withContext(Dispatchers.IO) { importOne(uri, index + 1) })
+                    importProgress = importProgress?.copy(completed = outcomes.size)
+                }
+                importResult = ImportResult(outcomes.toList(), selected.size - outcomes.size)
+            } finally {
+                if (outcomes.any { it.photo != null }) libraryChanged()
+                importProgress = null
+            }
+        }
+    }
+
+    private fun importOne(uri: Uri, number: Int): ImportOutcome {
+        val source = library.importSource(uri, "Photo $number")
+        return try {
+            ImportOutcome(source.name, photo = library.import(uri, source))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: PhotoImportException) {
+            ImportOutcome(source.name, error = failure.message ?: "Could not import this photo.")
+        } catch (failure: ImageInputException) {
+            ImportOutcome(source.name, error = failure.message ?: "Could not open this image.")
+        } catch (_: Exception) {
+            ImportOutcome(source.name, error = "Could not read or save this photo.")
+        } catch (_: OutOfMemoryError) {
+            ImportOutcome(source.name, error = "This image is too large to decode.")
+        }
+    }
 
     fun capture(film: Film, request: (File, (Boolean) -> Unit) -> Unit) {
         if (busy) return

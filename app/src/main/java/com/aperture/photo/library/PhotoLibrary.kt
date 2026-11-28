@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.os.Build
 import android.os.Bundle
 import android.util.AtomicFile
@@ -73,11 +74,36 @@ class PhotoLibrary(private val context: Context) {
         discardCapture(pending)
     }
 
-    fun import(uri: Uri): Photo {
+    fun import(uri: Uri): Photo = import(uri, importSource(uri, "Photo"))
+
+    internal fun importSource(uri: Uri, fallback: String): ImportSource {
+        if (uri.scheme == "file") {
+            val file = uri.path?.let(::File)
+            return ImportSource(file?.name?.take(120) ?: fallback, file?.length())
+        }
+        return runCatching {
+            val projection = arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE)
+            resolver.query(uri, projection, null, null, null)?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val name = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val size = cursor.getColumnIndex(OpenableColumns.SIZE)
+                ImportSource(
+                    if (name >= 0) cursor.getString(name)?.take(120)?.takeIf(String::isNotBlank) ?: fallback else fallback,
+                    if (size >= 0 && !cursor.isNull(size)) cursor.getLong(size).takeIf { it >= 0 } else null
+                )
+            }
+        }.getOrNull() ?: ImportSource(fallback)
+    }
+
+    internal fun import(uri: Uri, source: ImportSource): Photo {
         val pending = beginCapture()
         try {
             val input = resolver.openInputStream(uri) ?: throw IOException("Could not open the photo")
-            input.use { source -> pending.outputStream().use { source.copyTo(it) } }
+            input.use {
+                pending.outputStream().use { output ->
+                    PhotoImport.copy(input, output, source.bytes, availableBytes = { context.cacheDir.usableSpace })
+                }
+            }
             PhotoRenderer.validateStillImport(pending)
             return commitCapture(pending, Film.CLEAN)
         } finally {
