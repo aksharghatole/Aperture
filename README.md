@@ -41,6 +41,10 @@ Use **Import** in Library to pick up to 50 images at a time. A single successful
 
 Aperture uses Android’s image decoder for still photos, including JPEG, PNG, and WebP. It rejects animations the decoder recognizes, such as animated GIF and WebP. Extract a still frame before importing one. Imports preserve the source file bytes. JPEG exports use a white background in transparent areas, including batch exports.
 
+## JPEG export policy
+
+Exports are new sRGB JPEGs. Aperture converts embedded source profiles to sRGB before applying edits, then writes the crop and rotation into the pixels. Source EXIF orientation is applied when decoding. The exported JPEG carries no copied capture date, camera settings, camera identifiers, GPS coordinates, orientation, or source dimensions. Aperture keeps the original bytes and metadata in its local library.
+
 ## Device verification
 
 For group portraits, frame two to four people in Portrait mode with the rear and front cameras. Check that the box follows the visible group in portrait and landscape, and that the direction agrees with the mirrored preview. Have someone turn away, move into the frame edge, or step out. Check that the box disappears until the detector has enough consistent readings. Verify the single face marker with one person.

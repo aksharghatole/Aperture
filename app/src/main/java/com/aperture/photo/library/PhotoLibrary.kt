@@ -294,6 +294,7 @@ class PhotoLibrary(private val context: Context) {
             try {
                 val stream = resolver.openOutputStream(uri) ?: throw IOException("Could not write the export")
                 stream.use {
+                    // Encode the rendered pixels without transferring source EXIF.
                     if (!rendered.compress(android.graphics.Bitmap.CompressFormat.JPEG, 96, it)) {
                         throw IOException("Could not encode the export")
                     }
