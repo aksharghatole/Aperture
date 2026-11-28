@@ -59,7 +59,7 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 - Before and after comparison with matching crop and rotation and the original capture look as the baseline.
 - Darkroom preview inspection with pinch zoom, double tap, pan, and Fit.
 - Master RGB and per-channel curves with black, midtone, and white points.
-- Aspect-ratio crop presets with drag positioning and non-destructive export.
+- [x] Resizable edge/corner crops with locked presets, freeform bounds, accessible sliders, and non-destructive export.
 - Batch export for selected photos using each saved Darkroom edit.
 - [x] Choose a full-size or limited long edge and JPEG quality for single and batch exports.
 - Import multiple photos with progress, per-file results, and storage limits.

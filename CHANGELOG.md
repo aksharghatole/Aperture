@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added adjustable edge/corner crop handles, ratio locking, freeform sizing, labeled position and size sliders, and original-pixel dimensions.
+
 - Add a version-tagged GitHub Release workflow for testing and publishing persistently signed APKs.
 - Configure release signing through repository Actions secrets without storing private signing material in the source tree.
 - Added export size presets, custom long-edge limits, quality controls and post-crop dimensions in single and batch JPEG exports.
