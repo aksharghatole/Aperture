@@ -54,3 +54,6 @@ CameraX refreshes preview, analysis, and capture when the display rotates, even 
 Darkroom checks export dimensions before allocating full-resolution buffers. If the estimated memory exceeds the available budget, it offers a smaller JPEG and waits for confirmation. Batch export keeps photos that exceed the budget selected so they can be opened in Darkroom individually. At 12, 48, and 108 megapixels, the uncropped buffer estimate is about 153, 565, and 1,252 MiB respectively, including a 16 MiB allowance. These are estimates. Actual peak memory still needs measurement on a constrained Android device.
 
 Captures and exports report their results after activity recreation. Aperture blocks navigation during a capture or a single export. In a batch, **Stop** or Back lets the current photo finish and leaves the rest selected. Camera interruptions can cancel an in-flight capture. A terminated app process uses the startup recovery rules described above.
+
+
+Darkroom grain is generated locally with a fixed-seed deterministic pattern. Its intensity defaults to zero, and grain size is scaled to the rendered image dimensions so preview and full-resolution exports keep the same grain character. Saved edit history written by this version uses a new versioned format and older versions load with grain disabled.

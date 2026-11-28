@@ -122,6 +122,7 @@ object PhotoRenderer {
             canvas.scale(width.toFloat(), height.toFloat())
             canvas.drawRect(0f, 0f, 1f, 1f, paint)
         }
+        GrainEffect.apply(output, recipe.grainIntensity, recipe.grainSize)
         return output
     }
 

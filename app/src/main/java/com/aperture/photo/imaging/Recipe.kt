@@ -26,7 +26,9 @@ data class Recipe(
     val crop: CropWindow = CropWindow.Full,
     val shadows: Float = 0f,
     val highlights: Float = 0f,
-    val curves: RgbCurves = RgbCurves()
+    val curves: RgbCurves = RgbCurves(),
+    val grainIntensity: Float = 0f,
+    val grainSize: Float = 0f
 )
 
 /** Use the capture look and keep the edited preview's geometry for a like-for-like comparison. */

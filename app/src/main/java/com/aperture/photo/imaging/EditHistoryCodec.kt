@@ -3,7 +3,7 @@ package com.aperture.photo.imaging
 /** Versioned local format. Each line after the header represents one complete edit. */
 internal object EditHistoryCodec {
     fun encode(history: EditHistory): String = buildString {
-        append("4,").append(history.cursor)
+        append("5,").append(history.cursor)
         for (recipe in history.snapshots) {
             append('\n').append(recipe.film.name)
             append(',').append(recipe.exposure).append(',').append(recipe.contrast)
@@ -15,6 +15,7 @@ internal object EditHistoryCodec {
             for (curve in with(recipe.curves) { listOf(master, red, green, blue) }) {
                 append(',').append(curve.black).append(',').append(curve.midtone).append(',').append(curve.white)
             }
+            append(',').append(recipe.grainIntensity).append(',').append(recipe.grainSize)
         }
     }
 
@@ -41,6 +42,7 @@ internal object EditHistoryCodec {
         "2" -> 11
         "3" -> 13
         "4" -> 25
+        "5" -> 27
         else -> null
     }
 
@@ -64,8 +66,8 @@ internal object EditHistoryCodec {
         val shadows = if (fieldCount >= 13) parts[11].toFloatOrNull() ?: return null else 0f
         val highlights = if (fieldCount >= 13) parts[12].toFloatOrNull() ?: return null else 0f
         if (shadows !in -1f..1f || highlights !in -1f..1f) return null
-        val curves = if (fieldCount == 25) {
-            val channels = parts.drop(13).chunked(3).map { points ->
+        val curves = if (fieldCount >= 25) {
+            val channels = parts.subList(13, 25).chunked(3).map { points ->
                 val (black, midtone, white) = points.map { it.toIntOrNull() ?: return null }
                 try {
                     ToneCurve(black, midtone, white)
@@ -75,7 +77,10 @@ internal object EditHistoryCodec {
             }
             RgbCurves(channels[0], channels[1], channels[2], channels[3])
         } else RgbCurves()
-        return Recipe(film, exposure, contrast, saturation, warmth, vignette, turns, crop, shadows, highlights, curves)
+        val grainIntensity = if (fieldCount >= 27) parts[25].toFloatOrNull() ?: return null else 0f
+        val grainSize = if (fieldCount >= 27) parts[26].toFloatOrNull() ?: return null else 0f
+        if (grainIntensity !in 0f..1f || grainSize !in 0f..1f) return null
+        return Recipe(film, exposure, contrast, saturation, warmth, vignette, turns, crop, shadows, highlights, curves, grainIntensity, grainSize)
     }
 
     const val MaxEncodedSize = 12_288

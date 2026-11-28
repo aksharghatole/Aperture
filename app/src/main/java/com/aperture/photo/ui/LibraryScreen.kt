@@ -554,7 +554,9 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
                 EditControl("Contrast", recipe.contrast, -0.5f..0.5f) { draft = (draft ?: history.current).copy(contrast = it) },
                 EditControl("Color", recipe.saturation, -1f..1f) { draft = (draft ?: history.current).copy(saturation = it) },
                 EditControl("Warmth", recipe.warmth, -1f..1f) { draft = (draft ?: history.current).copy(warmth = it) },
-                EditControl("Vignette", recipe.vignette, 0f..1f) { draft = (draft ?: history.current).copy(vignette = it) }
+                EditControl("Vignette", recipe.vignette, 0f..1f) { draft = (draft ?: history.current).copy(vignette = it) },
+                EditControl("Grain", recipe.grainIntensity, 0f..1f) { draft = (draft ?: history.current).copy(grainIntensity = it) },
+                EditControl("Grain size", recipe.grainSize, 0f..1f) { draft = (draft ?: history.current).copy(grainSize = it) }
             )
             val tool = controls.first { it.label == selectedTool }
             androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
