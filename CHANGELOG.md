@@ -23,6 +23,7 @@
 - Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
 - Added multi-photo imports with progress, a stop control, per-file outcomes, and limits for low storage and oversized inputs.
 - Added persistent camera guide choices for automatic, thirds, center, diagonal, golden-ratio, and off overlays.
+- Added explicit composition targets and a manual subject marker separate from tap focus.
 - Added a Darkroom photo information panel with original pixel dimensions, format, file size and date, and available EXIF capture details.
 - Added an opt-in volume-key shutter shortcut, disabled by default and active only while the camera can capture.
 - Reject recognized animations on import and fill transparent pixels with white for JPEG export.

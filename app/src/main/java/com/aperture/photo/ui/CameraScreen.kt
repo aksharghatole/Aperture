@@ -65,9 +65,11 @@ import com.aperture.photo.camera.SelfTimer
 import com.aperture.photo.camera.SelfTimerCountdown
 import com.aperture.photo.camera.SelfTimerStep
 import com.aperture.photo.camera.Composition
+import com.aperture.photo.camera.CompositionAnchor
 import com.aperture.photo.camera.CompositionGuide
 import com.aperture.photo.camera.CompositionGuideGeometry
 import com.aperture.photo.camera.Framing
+import com.aperture.photo.camera.ManualSubject
 import com.aperture.photo.camera.Scene
 import com.aperture.photo.camera.SceneReading
 import kotlinx.coroutines.delay
@@ -114,6 +116,9 @@ internal fun CameraScreen(
     }
     var timerHaptics by remember { mutableStateOf(cameraPreferences.getBoolean("timer_haptics_enabled", false)) }
     var mode by rememberSaveable { mutableStateOf(ShootingMode.STREET) }
+    var anchor by rememberSaveable { mutableStateOf(CompositionAnchor.AUTO) }
+    var markingSubject by remember { mutableStateOf(false) }
+    var manualSubject by remember { mutableStateOf<ManualSubject?>(null) }
     var referenceDialogOpen by rememberSaveable { mutableStateOf(false) }
     var aligningReference by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf<SceneReading?>(null) }
@@ -151,9 +156,10 @@ internal fun CameraScreen(
         else pendingShutter = PendingShutter(SelfTimer.start(++timerRequestId, timerSeconds), film, active)
     }
 
-    BackHandler(enabled = busy || pendingShutter != null || aligningReference) {
+    BackHandler(enabled = busy || pendingShutter != null || aligningReference || markingSubject) {
         if (pendingShutter != null) pendingShutter = null
         else if (aligningReference) aligningReference = false
+        else if (markingSubject) markingSubject = false
     }
 
     val dispatchVolumeShutter by rememberUpdatedState {
@@ -209,7 +215,11 @@ internal fun CameraScreen(
     DisposableEffect(owner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) granted = cameraPermission(context)
-            else if (event == Lifecycle.Event.ON_PAUSE) pendingShutter = null
+            else if (event == Lifecycle.Event.ON_PAUSE) {
+                pendingShutter = null
+                markingSubject = false
+                manualSubject = null
+            }
         }
         owner.lifecycle.addObserver(observer)
         onDispose { owner.lifecycle.removeObserver(observer) }
@@ -236,8 +246,13 @@ internal fun CameraScreen(
                                 if (!active) {
                                     reading = null
                                     pendingShutter = null
+                                    markingSubject = false
+                                    manualSubject = null
                                 }
-                        }, { zoom = it }, { exposure = it }, { focusFeedback = it }, { flashState = it }, { error = it })
+                        }, {
+                            if (zoom.ratio != it.ratio) manualSubject = null
+                            zoom = it
+                        }, { exposure = it }, { focusFeedback = it }, { flashState = it }, { error = it })
                         session = connection
                         onDispose {
                             connection.close()
@@ -275,6 +290,15 @@ internal fun CameraScreen(
                                 }
                             }
                         }
+                    } else if (markingSubject) {
+                        Modifier.pointerInput(Unit) {
+                            detectTapGestures { tap ->
+                                ManualSubject.fromTap(tap.x, tap.y, size.width, size.height)?.let {
+                                    manualSubject = it
+                                    markingSubject = false
+                                }
+                            }
+                        }
                     } else {
                         Modifier.pointerInput(session) {
                             detectTransformGestures { _, _, zoomChange, _ ->
@@ -284,7 +308,8 @@ internal fun CameraScreen(
                             detectTapGestures { tap -> session?.focus(tap.x / size.width, tap.y / size.height) }
                         }
                     }
-                    GuideOverlay(scene, roll, mode, guide, Modifier.matchParentSize().then(viewfinderGestures))
+                    GuideOverlay(scene, roll, mode, guide, anchor, manualSubject, markingSubject,
+                        Modifier.matchParentSize().then(viewfinderGestures))
                     focusFeedback?.let { TapFocusOverlay(it, Modifier.matchParentSize()) }
                     if (diagnosticsEnabled && analysisAvailable) {
                         ExposureDiagnosticsOverlay(scene?.exposureDiagnostics,
@@ -310,8 +335,9 @@ internal fun CameraScreen(
                         }
                     } else Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
-                        val hint = captureMessage ?: Composition.guidance(scene, roll, mode,
-                            analysisAvailable = analysisAvailable)
+                        val hint = if (markingSubject) "Tap the subject to mark it · Back to cancel"
+                        else captureMessage ?: Composition.guidance(scene, roll, mode,
+                            analysisAvailable = analysisAvailable, anchor = anchor, manualSubject = manualSubject != null)
                         Text(hint, color = Color.White, fontSize = 13.sp,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .75f))
                                 .padding(horizontal = 14.dp, vertical = 8.dp))
@@ -401,6 +427,14 @@ internal fun CameraScreen(
             }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                CameraFramingMenu(anchor, manualSubject != null, !busy && pendingShutter == null,
+                    canMark = ready, selectAnchor = { anchor = it }, mark = {
+                        aligningReference = false
+                        markingSubject = true
+                    }, clear = {
+                        markingSubject = false
+                        manualSubject = null
+                    })
                 Text("Guide", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 CompositionGuide.entries.forEach { item ->
                     FilterChip(selected = guide == item, onClick = {
@@ -410,7 +444,8 @@ internal fun CameraScreen(
                 }
             }
             if (guide != CompositionGuide.AUTO && guide != CompositionGuide.OFF) {
-                Text("Visual overlay only · guidance follows ${mode.title}",
+                val targetLabel = if (anchor == CompositionAnchor.AUTO) mode.title else anchor.title
+                Text("Grid only · target uses $targetLabel",
                     color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
             } else if (guide == CompositionGuide.OFF) {
                 Text("Grid off · assistant framing cues remain", color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -517,6 +552,7 @@ internal fun CameraScreen(
                 Row {
                     if (granted) TextButton(enabled = !busy, onClick = {
                         aligningReference = false
+                        markingSubject = false
                         referenceDialogOpen = true
                     }) {
                         Text("Reference")
@@ -577,9 +613,13 @@ fun FilmPicker(film: Film, onChange: (Film) -> Unit) {
 }
 
 @Composable
-private fun GuideOverlay(scene: Scene?, roll: Float?, mode: ShootingMode, guide: CompositionGuide, modifier: Modifier) {
+private fun GuideOverlay(
+    scene: Scene?, roll: Float?, mode: ShootingMode, guide: CompositionGuide,
+    anchor: CompositionAnchor, manualSubject: ManualSubject?, markingSubject: Boolean, modifier: Modifier
+) {
     val framing = mode.framing
     val accent = MaterialTheme.colorScheme.primary
+    val manual = markingSubject || manualSubject != null
     Canvas(modifier) {
         val white = Color.White.copy(alpha = .37f)
         val center = Offset(size.width / 2, size.height / 2)
@@ -587,21 +627,35 @@ private fun GuideOverlay(scene: Scene?, roll: Float?, mode: ShootingMode, guide:
             drawLine(white, Offset(line.startX * size.width, line.startY * size.height),
                 Offset(line.endX * size.width, line.endY * size.height))
         }
-        if (guide != CompositionGuide.OFF && framing != Framing.THIRDS && framing != Framing.HORIZON) {
+        if (anchor != CompositionAnchor.AUTO || manual) {
+            val target = anchor.target(framing)
+            val point = Offset(target.x * size.width, target.y * size.height)
+            drawCircle(Color.Black.copy(alpha = .65f), 13.dp.toPx(), point,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
+            drawCircle(accent, 13.dp.toPx(), point, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+        } else if (guide != CompositionGuide.OFF && framing != Framing.THIRDS && framing != Framing.HORIZON) {
             val anchor = Offset(size.width * framing.anchorX, size.height * framing.anchorY)
             drawCircle(white, 34.dp.toPx(), anchor, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         }
-        Composition.framingPoint(scene, mode)?.let {
+        Composition.framingPoint(scene, mode, anchor, manualSubject = manual)?.let {
             val point = Offset(it.x * size.width, it.y * size.height)
             drawCircle(Color.Black.copy(alpha = .65f), 8.dp.toPx(), point)
             drawCircle(accent, 5.dp.toPx(), point, style = androidx.compose.ui.graphics.drawscope.Stroke(1.4.dp.toPx()))
         }
-        if (mode == ShootingMode.PORTRAIT) scene?.portraitGroup?.let { group ->
+        if (!manual && mode == ShootingMode.PORTRAIT) scene?.portraitGroup?.let { group ->
             val topLeft = Offset(group.left * size.width, group.top * size.height)
             val region = Size((group.right - group.left) * size.width, (group.bottom - group.top) * size.height)
             drawRect(Color.Black.copy(alpha = .65f), topLeft, region,
                 style = androidx.compose.ui.graphics.drawscope.Stroke(3.dp.toPx()))
             drawRect(accent, topLeft, region, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        }
+        manualSubject?.let {
+            val half = ManualSubject.HalfExtent
+            val corner = Offset((it.center.x - half) * size.width, (it.center.y - half) * size.height)
+            val extent = Size(2 * half * size.width, 2 * half * size.height)
+            drawRect(Color.Black.copy(alpha = .65f), corner, extent,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(4.dp.toPx()))
+            drawRect(Color.White, corner, extent, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
         }
         if (framing == Framing.HORIZON) drawLine(white, Offset(0f, center.y), Offset(size.width, center.y))
         if (roll != null) {
