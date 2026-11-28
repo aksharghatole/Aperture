@@ -12,6 +12,8 @@ import android.os.Bundle
 import android.util.AtomicFile
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
+import com.aperture.photo.imaging.ExportSettings
+import com.aperture.photo.imaging.ImageSize
 import com.aperture.photo.imaging.Film
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
@@ -275,15 +277,18 @@ class PhotoLibrary(private val context: Context) {
         }
     }
 
-    fun exportSavedEdits(photo: Photo): Uri =
-        export(photo, loadEdits(photo)?.current ?: Recipe(photo.film))
+    internal fun exportDimensions(photo: Photo, recipe: Recipe? = null): ImageSize =
+        PhotoRenderer.exportDimensions(photo.file, recipe ?: loadEdits(photo)?.current ?: Recipe(photo.film))
 
-    fun export(photo: Photo, recipe: Recipe, maxEdge: Int? = null): Uri {
-        val source = PhotoRenderer.decodeForExport(photo.file, recipe, maxEdge)
+    fun exportSavedEdits(photo: Photo, settings: ExportSettings = ExportSettings()): Uri =
+        export(photo, loadEdits(photo)?.current ?: Recipe(photo.film), settings)
+
+    fun export(photo: Photo, recipe: Recipe, settings: ExportSettings = ExportSettings()): Uri {
+        val source = PhotoRenderer.decodeForExport(photo.file, recipe, settings.longEdge)
         val rendered = try {
-            PhotoRenderer.render(source, recipe)
+            PhotoRenderer.render(source.bitmap, recipe, source.plan)
         } finally {
-            source.recycle()
+            source.bitmap.recycle()
         }
         val name = "Aperture-${System.currentTimeMillis()}-${UUID.randomUUID()}.jpg"
         synchronized(recoveryLock) { activeExports.add(name) }
@@ -297,21 +302,18 @@ class PhotoLibrary(private val context: Context) {
             }
             val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                 ?: throw IOException("Could not create the export")
-            try {
-                val stream = resolver.openOutputStream(uri) ?: throw IOException("Could not write the export")
+            return publishPendingExport(uri, write = { pending ->
+                val stream = resolver.openOutputStream(pending) ?: throw IOException("Could not write the export")
                 stream.use {
                     // Encode the rendered pixels without transferring source EXIF.
-                    if (!rendered.compress(android.graphics.Bitmap.CompressFormat.JPEG, 96, it)) {
+                    if (!rendered.compress(android.graphics.Bitmap.CompressFormat.JPEG, settings.quality, it)) {
                         throw IOException("Could not encode the export")
                     }
                 }
+            }, publish = { pending ->
                 val published = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-                if (resolver.update(uri, published, null, null) != 1) throw IOException("Could not publish the export")
-                return uri
-            } catch (failure: Throwable) {
-                runCatching { resolver.delete(uri, null, null) }
-                throw failure
-            }
+                if (resolver.update(pending, published, null, null) != 1) throw IOException("Could not publish the export")
+            }, cleanup = { pending -> resolver.delete(pending, null, null) })
         } finally {
             synchronized(recoveryLock) { activeExports.remove(name) }
             rendered.recycle()

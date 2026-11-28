@@ -63,18 +63,40 @@ object PhotoRenderer {
         if (bitmap.hasAlpha()) Canvas(bitmap).drawColor(Color.WHITE, PorterDuff.Mode.DST_OVER)
     }
 
+    internal data class ExportSource(val bitmap: Bitmap, val plan: ExportPlan)
+
     internal fun decodeForExport(
         file: File, recipe: Recipe, maxEdge: Int?, memoryBudget: () -> Long = {
             val runtime = Runtime.getRuntime()
             ExportMemory.budget(runtime.maxMemory(), runtime.totalMemory() - runtime.freeMemory())
         }
-    ): Bitmap = try {
-        decode(ImageDecoder.createSource(file), maxEdge) { info ->
+    ): ExportSource = try {
+        var plan: ExportPlan? = null
+        val bitmap = ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
             requireStillImage(info)
-            ExportMemory.check(info.size.width, info.size.height, recipe, maxEdge, memoryBudget())
+            val requested = ExportMemory.check(info.size.width, info.size.height, recipe, maxEdge, memoryBudget())
+            plan = requested
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
+            if (requested.decode != requested.original) {
+                decoder.setTargetSize(requested.decode.width, requested.decode.height)
+            }
         }
+        ExportSource(bitmap, checkNotNull(plan))
     } catch (failure: ImageDecoder.DecodeException) {
         throw ImageInputException("The original image could not be decoded. Try reimporting a valid still image.", failure)
+    }
+
+    // Read the same oriented header used for rendering, requesting only a tiny decoded bitmap.
+    internal fun exportDimensions(file: File, recipe: Recipe): ImageSize {
+        var dimensions: ImageSize? = null
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+            requireStillImage(info)
+            dimensions = ExportPlan.create(ImageSize(info.size.width, info.size.height), recipe, null).output
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+            decoder.setTargetSize(1, 1)
+        }.recycle()
+        return checkNotNull(dimensions)
     }
 
     private fun decode(
@@ -90,17 +112,21 @@ object PhotoRenderer {
         }
     }
 
-    fun render(source: Bitmap, recipe: Recipe): Bitmap {
+    fun render(source: Bitmap, recipe: Recipe): Bitmap =
+        render(source, recipe, ExportPlan.create(ImageSize(source.width, source.height), recipe, null))
+
+    internal fun render(source: Bitmap, recipe: Recipe, plan: ExportPlan): Bitmap {
         val turns = Math.floorMod(recipe.quarterTurns, 4)
-        val sideways = turns % 2 != 0
-        val width = if (sideways) source.height else source.width
-        val height = if (sideways) source.width else source.height
-        val crop = recipe.crop.pixels(width, height)
-        val output = Bitmap.createBitmap(crop.width, crop.height, Bitmap.Config.ARGB_8888)
+        val width = plan.rotated.width
+        val height = plan.rotated.height
+        val crop = plan.crop
+        val output = Bitmap.createBitmap(plan.output.width, plan.output.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
+        canvas.scale(plan.output.width.toFloat() / crop.width, plan.output.height.toFloat() / crop.height)
         canvas.translate(-crop.left.toFloat(), -crop.top.toFloat())
         val transform = Matrix().apply {
-            postTranslate(-source.width / 2f, -source.height / 2f)
+            postScale(plan.original.width.toFloat() / source.width, plan.original.height.toFloat() / source.height)
+            postTranslate(-plan.original.width / 2f, -plan.original.height / 2f)
             postRotate(turns * 90f)
             postTranslate(width / 2f, height / 2f)
         }
