@@ -6,14 +6,15 @@ import android.media.FaceDetector
 
 /** Runs the device's offline frontal face detector on downsampled, upright luma. */
 internal class PortraitDetector {
-    private val faces = arrayOfNulls<FaceDetector.Face>(2)
+    // The extra slot lets us suppress cues when the detector reaches capacity.
+    private val faces = arrayOfNulls<FaceDetector.Face>(PortraitFraming.MaxGroupSize + 1)
     private val midpoint = PointF()
     private var detector: FaceDetector? = null
     private var bitmap: Bitmap? = null
     private var pixels = IntArray(0)
     private var failed = false
 
-    fun detect(frame: LumaFrame, mirrored: Boolean): FocusRegion? {
+    fun detect(frame: LumaFrame, mirrored: Boolean): List<DetectedEyes>? {
         if (failed) return null
         val longest = maxOf(frame.width, frame.height)
         val width = (frame.width * 320 / longest).coerceAtLeast(2) and -2
@@ -37,11 +38,16 @@ internal class PortraitDetector {
             }
             input.setPixels(pixels, 0, width, 0, 0, width, height)
             val count = checkNotNull(detector).findFaces(input, faces)
-            val face = faces[0]
-            if (count != 1 || face == null) return null
-            face.getMidPoint(midpoint)
-            PortraitFraming.eyePoint(count, face.confidence(), midpoint.x / width, midpoint.y / height,
-                face.eyesDistance() / width, mirrored)
+            if (count !in 1..PortraitFraming.MaxGroupSize) return null
+            val detected = ArrayList<DetectedEyes>(count)
+            for (index in 0 until count) {
+                val face = faces[index] ?: return null
+                face.getMidPoint(midpoint)
+                val span = face.eyesDistance()
+                detected.add(DetectedEyes(face.confidence(), midpoint.x / width, midpoint.y / height,
+                    span / width, span / height))
+            }
+            PortraitFraming.validate(detected, mirrored)
         } catch (_: RuntimeException) {
             failed = true
             null

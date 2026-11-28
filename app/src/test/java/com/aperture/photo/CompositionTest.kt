@@ -3,7 +3,6 @@ package com.aperture.photo
 import com.aperture.photo.camera.Composition
 import com.aperture.photo.camera.DetailTracker
 import com.aperture.photo.camera.ShootingMode
-import com.aperture.photo.camera.PortraitFraming
 import com.aperture.photo.camera.FocusRegion
 import com.aperture.photo.camera.Framing
 import com.aperture.photo.camera.Scene
@@ -81,15 +80,6 @@ class CompositionTest {
         assertEquals("Aim a little left", Composition.guidance(face, 0f, ShootingMode.PORTRAIT))
         assertEquals(face.portraitEyes, Composition.framingPoint(face, ShootingMode.PORTRAIT))
         assertEquals(scene.focus, Composition.framingPoint(face, ShootingMode.STREET))
-    }
-
-    @Test fun portraitRejectsAmbiguousDetectionsAndMirrorsPreviewCoordinates() {
-        assertNull(PortraitFraming.eyePoint(2, .95f, .2f, .4f, .1f, false))
-        assertNull(PortraitFraming.eyePoint(1, .5f, .2f, .4f, .1f, false))
-        assertNull(PortraitFraming.eyePoint(1, .9f, .02f, .4f, .1f, false))
-        assertNull(PortraitFraming.eyePoint(1, .9f, .2f, .4f, .01f, false))
-        assertEquals(FocusRegion(.2f, .4f), PortraitFraming.eyePoint(1, .9f, .2f, .4f, .1f, false))
-        assertEquals(FocusRegion(.8f, .4f), PortraitFraming.eyePoint(1, .9f, .2f, .4f, .1f, true))
     }
 
     @Test fun gravityRollTracksDisplayAxesInEveryRotation() {

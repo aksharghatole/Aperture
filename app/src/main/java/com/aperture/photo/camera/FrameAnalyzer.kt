@@ -13,7 +13,7 @@ internal class FrameAnalyzer(
     private var previousMode: ShootingMode? = null
     private val samples = IntArray(Size * Size)
     private val detailTracker = DetailTracker()
-    private val faceTracker = DetailTracker()
+    private val faceTracker = PortraitTracker()
     private val portraitDetector by lazy { PortraitDetector() }
 
     override fun analyze(image: ImageProxy) {
@@ -44,10 +44,11 @@ internal class FrameAnalyzer(
                 }
             }
             val scene = Composition.measure(samples, Size, Size)
-            val eyes = if (mode == ShootingMode.PORTRAIT) {
+            val portrait = if (mode == ShootingMode.PORTRAIT) {
                 faceTracker.update(portraitDetector.detect(frame, mirrored))
             } else null
-            val tracked = scene.copy(focus = detailTracker.update(scene.focus), portraitEyes = eyes)
+            val tracked = scene.copy(focus = detailTracker.update(scene.focus), portraitEyes = portrait?.eyes,
+                portraitGroup = portrait?.group)
             onScene(mode, SceneReading(tracked, now))
         } catch (_: RuntimeException) {
             invalidate(mode)
