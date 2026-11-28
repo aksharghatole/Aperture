@@ -38,6 +38,8 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 
 ## Camera assistant
 
+- Motion-sensor steadiness indicator and opt-in one-shot steady shutter with a ten-second timeout. Calibrate thresholds on physical devices before expanding to framing-triggered capture.
+
 - Shooting coach for all seven modes, with framing, light and technique lessons, fresh preview observations, optional focus/metering at detected eyes or a user marker, and a still-scene timer shortcut.
 
 - Guided and opt-in one-shot Auto exposure assistance using stable preview luma and supported compensation. Next: calibrate on real scenes, add shooting-mode-specific lighting and focus coaching, and explore capability-gated shutter/ISO advice.

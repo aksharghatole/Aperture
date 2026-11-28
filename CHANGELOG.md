@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a motion-sensor steadiness indicator and optional one-shot steady shutter using fresh gyroscope and linear acceleration readings. Subject motion is not measured; ordinary capture remains available without sensors.
+
 - Added a seven-mode shooting coach with practical lighting, framing and technique advice, fresh preview observations, explicit eye/marker focus actions and a still-scene timer shortcut.
 
 - Added Guided, Auto and Manual exposure assistance. Guided recommends small supported exposure adjustments; Auto applies at most one correction per explicit activation and avoids mixed lighting and deliberate night scenes.
