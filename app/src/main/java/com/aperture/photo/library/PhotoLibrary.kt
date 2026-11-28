@@ -30,6 +30,7 @@ internal class SavedEditException(val problem: SavedEditProblem, cause: IOExcept
 class PhotoLibrary(private val context: Context) {
     private val directory = File(context.filesDir, "photos").apply { mkdirs() }
     private val favoritesFile = AtomicFile(File(context.filesDir, "photo-favorites"))
+    internal val presets = PresetStore(File(context.filesDir, "analog-presets"))
     private val resolver = context.contentResolver
 
     fun favoriteNames(): Set<String> = synchronized(favoritesLock) {

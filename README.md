@@ -25,6 +25,8 @@ GitHub Actions runs the build checks and uploads an installable debug APK. With 
 
 Use **Reference** to pick an image and adjust its opacity, scale, and position. Choose **Align in viewfinder** to drag or pinch the overlay over the live preview. Tap **Done** to resume normal focus and zoom gestures. The overlay and its settings persist through rotation and trips to Library during the camera session. Captures contain only the camera image.
 
+Open **Presets** in Darkroom to save the current film, color, tone, curves, vignette, and grain as a named look. Apply a saved look to another photo as one undoable edit; crop and rotation are never copied. Rename or delete up to 50 named presets separately from photos and saved edit histories. Presets remain on-device across restarts. If the preset index is damaged or unreadable, Aperture preserves it and offers Retry instead of overwriting it.
+
 In Darkroom, toggle **Before** to compare the current edits with the original tones or the film look chosen at capture. Both views use the current crop and rotation. Saving and exporting use the current edits in either view.
 
 Pinch, double-tap, or use the zoom buttons to inspect a photo in Darkroom. Drag to pan while zoomed. **Fit** restores the full edited frame. Before and After share the same inspection position. Changing the crop or rotation returns to Fit. Inspection magnifies the preview, which is decoded at up to 1,400 pixels on its longest edge. Export uses the original photo.
@@ -42,6 +44,8 @@ Aperture uses Android’s image decoder for still photos, including JPEG, PNG, a
 ## Device verification
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.
+
+For presets: save a look from a cropped photo, close and reopen the app, apply it to a different rotated/cropped photo, and check Undo/Redo. Rename and delete the preset, then confirm the saved photo edits and original are unchanged.
 
 For reference alignment:
 
