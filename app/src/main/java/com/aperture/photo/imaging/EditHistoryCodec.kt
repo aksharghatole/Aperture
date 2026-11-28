@@ -67,7 +67,7 @@ internal object EditHistoryCodec {
         val highlights = if (fieldCount >= 13) parts[12].toFloatOrNull() ?: return null else 0f
         if (shadows !in -1f..1f || highlights !in -1f..1f) return null
         val curves = if (fieldCount >= 25) {
-            val channels = parts.drop(13).chunked(3).map { points ->
+            val channels = parts.subList(13, 25).chunked(3).map { points ->
                 val (black, midtone, white) = points.map { it.toIntOrNull() ?: return null }
                 try {
                     ToneCurve(black, midtone, white)
