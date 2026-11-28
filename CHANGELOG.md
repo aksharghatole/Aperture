@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added reusable named AnalogLab presets for Darkroom looks; applying one is undoable and preserves crop and rotation.
 - Added an approximate group framing box and aim cues in Portrait mode for stable detections of two to four frontal faces.
 
 - Added deterministic, resolution-relative film grain with intensity and size controls; saved edits remain compatible with earlier history formats.

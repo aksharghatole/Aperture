@@ -42,7 +42,8 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 
 ## AnalogLab
 
-- Save custom recipes. Add halation, bloom, and light leaks through a shared preview and export pipeline.
+- [x] Save, apply, rename, and delete named local Darkroom recipes without copying crop or rotation.
+- Add halation, bloom, and light leaks through a shared preview and export pipeline.
 - [x] Add deterministic, resolution-relative film grain with saved intensity and size controls.
 - Add local virtual rolls and opt-in delayed development.
 
