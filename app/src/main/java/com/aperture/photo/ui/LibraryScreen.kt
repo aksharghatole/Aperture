@@ -40,6 +40,7 @@ import com.aperture.photo.imaging.CropWindow
 import com.aperture.photo.imaging.EditHistory
 import com.aperture.photo.imaging.EditHistoryCodec
 import com.aperture.photo.imaging.ExportSettings
+import com.aperture.photo.imaging.ImageSize
 import com.aperture.photo.imaging.PhotoRenderer
 import com.aperture.photo.imaging.Recipe
 import com.aperture.photo.imaging.RgbCurves
@@ -488,10 +489,24 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             showPresets = false
         }
     }
-    var cropping by remember { mutableStateOf(false) }
+    var cropping by rememberSaveable(photo.file.name) { mutableStateOf(false) }
     if (cropping) {
-        val fullPreview by renderedPhoto(source, recipe.copy(crop = CropWindow.Full))
-        EditorCrop(fullPreview, recipe.crop, { cropping = false }) { crop ->
+        val fullRecipe = recipe.copy(crop = CropWindow.Full)
+        val fullPreview by renderedPhoto(source, fullRecipe)
+        val originalSize by produceState<Result<ImageSize>?>(null, photo, recipe.quarterTurns) {
+            value = withContext(Dispatchers.IO) {
+                try {
+                    Result.success(library.exportDimensions(photo, fullRecipe))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Result.failure(failure)
+                } catch (failure: OutOfMemoryError) {
+                    Result.failure(failure)
+                }
+            }
+        }
+        EditorCrop(fullPreview, originalSize, recipe.crop, { cropping = false }) { crop ->
             commit(recipe.copy(crop = crop))
             cropping = false
         }
