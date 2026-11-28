@@ -15,6 +15,7 @@ import com.aperture.photo.library.PhotoLibrary
 import java.io.File
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -41,10 +42,18 @@ class ExportPolicyTest {
             ExifInterface(fixture).apply {
                 setAttribute(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_ROTATE_90.toString())
                 setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, "2025:08:01 12:34:56")
-                setAttribute(ExifInterface.TAG_F_NUMBER, "28/10")
+                setAttribute(ExifInterface.TAG_F_NUMBER, "2.8")
                 setAttribute(ExifInterface.TAG_MAKE, "Fixture Camera")
                 setLatLong(38.1, -17.3)
                 saveAttributes()
+            }
+            ExifInterface(fixture).apply {
+                assertEquals(ExifInterface.ORIENTATION_ROTATE_90,
+                    getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_UNDEFINED))
+                assertEquals("2025:08:01 12:34:56", getAttribute(ExifInterface.TAG_DATETIME_ORIGINAL))
+                assertEquals(2.8, getAttributeDouble(ExifInterface.TAG_F_NUMBER, 0.0), .01)
+                assertEquals("Fixture Camera", getAttribute(ExifInterface.TAG_MAKE))
+                assertNotNull(latLong)
             }
             val sourceBytes = fixture.readBytes()
             val photo = library.import(Uri.fromFile(fixture))
