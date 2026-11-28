@@ -38,6 +38,8 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 
 ## Camera assistant
 
+- Verify accessible camera and Darkroom controls on physical devices with TalkBack, switch access, landscape and 200% font scaling; basic scroll layouts and labeled controls are implemented.
+
 - Extend offline subject detection beyond single frontal faces and refine framing in other shooting modes.
 - Validate lighting and background metrics against representative scenes. Gate distance or translation cues on evidence from calibrated depth or motion when supported.
 - [x] Add optional spoken and haptic cues backed by stable preview evidence.

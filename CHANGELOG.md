@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Keep the camera shutter outside scrollable settings, offer center focus without gestures, expose labeled Darkroom sliders and scroll compact editor layouts; separate Library and Darkroom headers from their action rows.
+
 - Added adjustable edge/corner crop handles, ratio locking, freeform sizing, labeled position and size sliders, and original-pixel dimensions.
 
 - Add a version-tagged GitHub Release workflow for testing and publishing persistently signed APKs.

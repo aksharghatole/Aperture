@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,6 +33,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -181,7 +187,7 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
             LinearProgressIndicator(progress = { progress.completed.toFloat() / progress.total }, Modifier.fillMaxWidth())
             Text(if (stopBatch) "Stopping after the current photo…" else
                 "Processed ${progress.completed} of ${progress.total}",
-                modifier = Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                modifier = Modifier.padding(vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = !favoritesOnly, enabled = !selectMode,
@@ -190,13 +196,13 @@ internal fun LibraryScreen(photos: List<Photo>, operations: PhotoOperations, bac
                 onClick = { favoritesOnly = true }, label = { Text("Favorites") })
         }
         batchMessage?.let {
-            Text(it, modifier = Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodySmall)
+            Text(it, modifier = Modifier.padding(bottom = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall)
         }
         if (importing != null) {
             LinearProgressIndicator(progress = { importing.completed.toFloat() / importing.total }, Modifier.fillMaxWidth())
             Text(if (importing.stopping) "Stopping after the current photo…" else
                 "Importing · ${importing.completed} of ${importing.total} processed",
-                modifier = Modifier.padding(vertical = 8.dp), style = MaterialTheme.typography.bodySmall)
+                modifier = Modifier.padding(vertical = 8.dp).semantics { liveRegion = LiveRegionMode.Polite }, style = MaterialTheme.typography.bodySmall)
         }
         if (visiblePhotos.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -541,7 +547,11 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
         )
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val compact = maxHeight < 520.dp || LocalDensity.current.fontScale >= 1.5f
+    val previewHeight = (maxHeight * .48f).coerceIn(120.dp, 300.dp)
+    val editorLayout = Modifier.fillMaxSize().padding(horizontal = 16.dp)
+    Column(if (compact) editorLayout.verticalScroll(rememberScrollState()) else editorLayout) {
         ScreenHeader("Darkroom", "Library", ::requestBack) {
             Row {
                 TextButton(enabled = !saving && !exporting && !deleting, onClick = {
@@ -602,7 +612,8 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             }
         }
 
-        Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged(inspection::resize).clip(RoundedCornerShape(18.dp))
+        Box((if (compact) Modifier.height(previewHeight) else Modifier.weight(1f))
+            .fillMaxWidth().onSizeChanged(inspection::resize).clip(RoundedCornerShape(18.dp))
             .background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
             val image = displayedImage
             when {
@@ -654,8 +665,8 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
                         label = { Text(option.label, fontSize = 11.sp) })
                 }
             }
-            Slider(value = tool.value, onValueChange = tool.change, valueRange = tool.range,
-                onValueChangeFinished = { draft?.let(::commit) })
+            LabeledEditSlider(tool.label, tool.value, tool.range, tool.change,
+                onFinished = { draft?.let(::commit) })
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                 verticalAlignment = Alignment.CenterVertically
@@ -700,10 +711,23 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             Text("JPEG exports fill transparency with white.", style = MaterialTheme.typography.labelSmall)
         }
         (message ?: currentExport?.message ?: completion)?.let {
-            Text(it, modifier = Modifier.padding(bottom = 10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text(it, modifier = Modifier.padding(bottom = 10.dp).semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp)
         }
     }
+    }
+}
+
+@Composable
+internal fun LabeledEditSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>,
+    onChange: (Float) -> Unit, onFinished: () -> Unit) {
+    val display = String.format(java.util.Locale.getDefault(), "%.2f", value)
+    Text("$label · $display", style = MaterialTheme.typography.bodySmall)
+    Slider(value = value, onValueChange = onChange, valueRange = range,
+        onValueChangeFinished = onFinished, modifier = Modifier.fillMaxWidth().semantics {
+            contentDescription = label
+            stateDescription = display
+        })
 }
 
 private data class EditControl(val label: String, val value: Float, val range: ClosedFloatingPointRange<Float>,
@@ -763,10 +787,14 @@ private fun PhotoInfoRow(label: String, value: String) {
 }
 
 @Composable
-private fun ScreenHeader(title: String, backLabel: String, onBack: () -> Unit, action: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().height(60.dp), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onBack, contentPadding = PaddingValues(end = 10.dp)) { Text("‹ $backLabel") }
-        Text(title, fontSize = 24.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-        action()
+internal fun ScreenHeader(title: String, backLabel: String, onBack: () -> Unit, action: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack, contentPadding = PaddingValues(end = 10.dp)) { Text("‹ $backLabel") }
+            Text(title, fontSize = 24.sp, fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f).semantics { heading() })
+        }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            verticalAlignment = Alignment.CenterVertically) { action() }
     }
 }
