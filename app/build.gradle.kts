@@ -18,12 +18,46 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release builds use a persistent signing key supplied by the release environment.
+    // Keep local builds usable without placing signing credentials in the repository.
+    val releaseStoreFile = System.getenv("APERTURE_RELEASE_STORE_FILE")
+    val releaseStorePassword = System.getenv("APERTURE_RELEASE_STORE_PASSWORD")
+    val releaseKeyAlias = System.getenv("APERTURE_RELEASE_KEY_ALIAS")
+    val releaseKeyPassword = System.getenv("APERTURE_RELEASE_KEY_PASSWORD")
+    val hasReleaseSigning = listOf(
+        releaseStoreFile,
+        releaseStorePassword,
+        releaseKeyAlias,
+        releaseKeyPassword,
+    ).all { !it.isNullOrBlank() }
+
+    signingConfigs {
+        create("apertureRelease") {
+            if (hasReleaseSigning) {
+                storeFile = file(requireNotNull(releaseStoreFile))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildFeatures { compose = true }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
+
+    buildTypes {
+        getByName("release") {
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("apertureRelease")
+            } else {
+                null
+            }
+        }
+    }
 }
 
 dependencies {

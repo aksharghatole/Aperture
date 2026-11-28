@@ -15,6 +15,14 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 GitHub Actions runs the build checks and uploads an installable debug APK. With a device or emulator connected, run `./gradlew connectedDebugAndroidTest` to verify that a full-resolution export preserves the original. Subsequent milestones are in [ROADMAP.md](ROADMAP.md).
 
+## Installing and updating release APKs
+
+The debug APK from Actions is for testing. A release APK keeps the package name `com.aperture.photo` and must be signed with the same private Android signing key for every update. The `Release APK` workflow builds and publishes a signed APK and SHA-256 checksum to GitHub Releases when a version tag is pushed. Increase `versionCode`, update `versionName`, and make the tag match it (for example, `v0.3.1`) for every release. The workflow tests and verifies the APK signature before publication.
+
+Before the first release, create a long-lived upload key in a secure location and configure these four repository Actions secrets: `APK_SIGNING_KEYSTORE_BASE64` (the base64-encoded keystore file), `APK_SIGNING_STORE_PASSWORD`, `APK_SIGNING_KEY_ALIAS`, and `APK_SIGNING_KEY_PASSWORD`. For example, create the key with `keytool -genkeypair -keystore aperture-release.jks -alias aperture -keyalg RSA -keysize 2048 -validity 10000`, then encode the file with `base64 -w 0 < aperture-release.jks` and save its output as the keystore secret. Store the passwords directly as Actions secrets. Keep a secure offline backup of the keystore and passwords; never commit them or replace the key after distributing an APK. Losing the key prevents Android from installing future releases over the existing app.
+
+Once the secrets are set, push the matching tag to publish: `git tag v0.3.1 && git push origin v0.3.1`. Users can install that APK over an existing Aperture installation signed with the same key. Android may require allowing APK installation from the browser or file manager used to download it. GitHub Releases provides a stable download page, but sideloaded APKs do not update automatically; automatic installs require distributing Aperture through Google Play (or another managed app store).
+
 ## Camera and darkroom
 
 1. Open Aperture, enable the camera, and select Portrait, Landscape, Street, Architecture, Food, Macro, or Night. Each mode sets a framing target or level tolerance.

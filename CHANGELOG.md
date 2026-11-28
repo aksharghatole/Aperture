@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a version-tagged GitHub Release workflow for testing and publishing persistently signed APKs.
+- Configure release signing through repository Actions secrets without storing private signing material in the source tree.
 - Added reusable named AnalogLab presets for Darkroom looks; applying one is undoable and preserves crop and rotation.
 - Added an approximate group framing box and aim cues in Portrait mode for stable detections of two to four frontal faces.
 
