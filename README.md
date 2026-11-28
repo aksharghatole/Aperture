@@ -49,6 +49,10 @@ Exports are new sRGB JPEGs. Aperture converts embedded source profiles to sRGB b
 
 ## Device verification
 
+Use **Cues** in the viewfinder controls to enable spoken or haptic composition guidance. Both start off. Spoken cues use an installed offline English voice. Haptic cues follow system touch feedback settings. Aim uses one tick, level uses two, and lighting uses a click. Stable cues pause while using a manual subject marker, setting up a shot, or leaving the camera.
+
+For cue verification, enable each option and hold a scene with a clear aim or level correction. Confirm that changing the framing or backgrounding Aperture stops speech, and that the visual hint stays available with cues off or without an offline voice or vibration motor. Check with airplane mode enabled.
+
 For group portraits, frame two to four people in Portrait mode with the rear and front cameras. Check that the box follows the visible group in portrait and landscape, and that the direction agrees with the mirrored preview. Have someone turn away, move into the frame edge, or step out. Check that the box disappears until the detector has enough consistent readings. Verify the single face marker with one person.
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.

@@ -39,7 +39,8 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 
 - Extend offline subject detection beyond single frontal faces and refine framing in other shooting modes.
 - Validate lighting and background metrics against representative scenes. Gate distance or translation cues on evidence from calibrated depth or motion when supported.
-- Add automatic reference image alignment, accessibility controls for voice and haptics, and opt-in automatic capture.
+- [x] Add optional spoken and haptic cues backed by stable preview evidence.
+- Add automatic reference image alignment and opt-in automatic capture.
 
 ## AnalogLab
 

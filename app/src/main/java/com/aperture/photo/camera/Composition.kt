@@ -95,8 +95,13 @@ object Composition {
     fun guidance(
         scene: Scene?, roll: Float?, mode: ShootingMode, analysisAvailable: Boolean = true,
         anchor: CompositionAnchor = CompositionAnchor.AUTO, manualSubject: Boolean = false
-    ): String =
-        guidance(scene, roll, mode.framing, analysisAvailable, mode.rollTolerance,
+    ): String = advice(scene, roll, mode, analysisAvailable, anchor, manualSubject).text
+
+    internal fun advice(
+        scene: Scene?, roll: Float?, mode: ShootingMode, analysisAvailable: Boolean,
+        anchor: CompositionAnchor, manualSubject: Boolean
+    ): CompositionAdvice =
+        advice(scene, roll, mode.framing, analysisAvailable, mode.rollTolerance,
             mode.aimTolerance, mode.lowLightBrightness, mode == ShootingMode.PORTRAIT, anchor, manualSubject)
 
     fun framingPoint(
@@ -115,27 +120,34 @@ object Composition {
         scene: Scene?, roll: Float?, framing: Framing, analysisAvailable: Boolean = true,
         rollTolerance: Float = 4f, aimTolerance: Float = .14f, lowLightBrightness: Int = 52,
         portrait: Boolean = false, anchor: CompositionAnchor = CompositionAnchor.AUTO, manualSubject: Boolean = false
-    ): String {
+    ): String = advice(scene, roll, framing, analysisAvailable, rollTolerance, aimTolerance,
+        lowLightBrightness, portrait, anchor, manualSubject).text
+
+    private fun advice(
+        scene: Scene?, roll: Float?, framing: Framing, analysisAvailable: Boolean,
+        rollTolerance: Float, aimTolerance: Float, lowLightBrightness: Int,
+        portrait: Boolean, anchor: CompositionAnchor, manualSubject: Boolean
+    ): CompositionAdvice {
         if (roll != null && abs(roll) >= rollTolerance) {
-            val direction = if (roll > 0) "clockwise" else "counterclockwise"
-            return "Rotate $direction · ${abs(roll).roundToInt()}°"
+            val cue = if (roll > 0) CompositionCue.CLOCKWISE else CompositionCue.COUNTERCLOCKWISE
+            return CompositionAdvice("${cue.words} · ${abs(roll).roundToInt()}°", cue)
         }
-        if (manualSubject) return "Manual marker · move the camera to frame your subject"
+        if (manualSubject) return CompositionAdvice("Manual marker · move the camera to frame your subject")
         val horizonOnly = framing == Framing.HORIZON && anchor == CompositionAnchor.AUTO
-        if (scene == null && analysisAvailable && anchor == CompositionAnchor.AUTO) return "Reading the viewfinder…"
-        if (horizonOnly && scene == null) {
-            return if (roll == null) "Use the horizon guide" else "Camera level"
+        if (scene == null && analysisAvailable && anchor == CompositionAnchor.AUTO) {
+            return CompositionAdvice("Reading the viewfinder…")
         }
-        val manualGuide = when {
+        if (horizonOnly && scene == null) return CompositionAdvice(if (roll == null) "Use the horizon guide" else "Camera level")
+        val manualGuide = CompositionAdvice(when {
             anchor != CompositionAnchor.AUTO -> "Frame your subject at the target"
             portrait -> "Place the eyes near the upper guide"
             else -> "Use the grid to frame your subject"
-        }
+        })
         if (scene == null) return manualGuide
-        if (scene.brightness < lowLightBrightness && scene.shadowFraction > .45f) return "Low light · hold steady"
-        if (scene.highlightFraction > .28f) return "Bright areas may lose detail"
+        if (scene.brightness < lowLightBrightness && scene.shadowFraction > .45f) return CompositionCue.LOW_LIGHT.advice()
+        if (scene.highlightFraction > .28f) return CompositionCue.HIGHLIGHTS.advice()
         if (horizonOnly) {
-            return if (roll == null) "Use the grid to judge the horizon" else "Camera level"
+            return CompositionAdvice(if (roll == null) "Use the grid to judge the horizon" else "Camera level")
         }
         val group = if (portrait) scene.portraitGroup else null
         val focus = group?.eyeCenter ?: (if (portrait) scene.portraitEyes else scene.focus) ?: return manualGuide
@@ -144,12 +156,15 @@ object Composition {
         val targetY = group?.fitTargetY(target.y) ?: target.y
         val dy = focus.y - targetY
         return when {
-            abs(dx) > aimTolerance && abs(dx) >= abs(dy) -> if (dx > 0) "Aim a little right" else "Aim a little left"
-            abs(dy) > aimTolerance -> if (dy > 0) "Aim a little lower" else "Aim a little higher"
-            group != null -> "Group detected · check framing"
-            else -> if (portrait) "Eyes near the framing guide" else "Detail near the framing guide"
+            abs(dx) > aimTolerance && abs(dx) >= abs(dy) ->
+                (if (dx > 0) CompositionCue.AIM_RIGHT else CompositionCue.AIM_LEFT).advice()
+            abs(dy) > aimTolerance -> (if (dy > 0) CompositionCue.AIM_LOWER else CompositionCue.AIM_HIGHER).advice()
+            group != null -> CompositionAdvice("Group detected · check framing")
+            else -> CompositionAdvice(if (portrait) "Eyes near the framing guide" else "Detail near the framing guide")
         }
     }
+
+    private fun CompositionCue.advice() = CompositionAdvice(words, this)
 
     /** Screen-relative roll using the display's clockwise quarter-turn index (Surface.ROTATION_*). */
     fun sensorRoll(x: Float, y: Float, z: Float, displayQuarterTurns: Int): Float? {
