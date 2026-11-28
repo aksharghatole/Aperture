@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added reusable named AnalogLab presets for Darkroom looks; applying one is undoable and preserves crop and rotation.
+
 - Added deterministic, resolution-relative film grain with intensity and size controls; saved edits remain compatible with earlier history formats.
 
 - Retained reference overlays through rotation and Library navigation, with manual drag, pinch, sliders, and alignment reset.

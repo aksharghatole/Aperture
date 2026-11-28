@@ -424,6 +424,13 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
             curveDraft = null
         }
     }
+    var showPresets by remember { mutableStateOf(false) }
+    if (showPresets) {
+        AnalogPresets(library.presets, recipe, { showPresets = false }) { edit ->
+            commit(edit)
+            showPresets = false
+        }
+    }
     var cropping by remember { mutableStateOf(false) }
     if (cropping) {
         val fullPreview by renderedPhoto(source, recipe.copy(crop = CropWindow.Full))
@@ -579,6 +586,8 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
                 }
                 TextButton(enabled = source != null && draft == null, onClick = { cropping = true }) { Text("Crop") }
                 TextButton(enabled = source != null && draft == null, onClick = { curveDraft = recipe.curves }) { Text("Curves") }
+                TextButton(enabled = source != null && draft == null && !saving && !exporting && !deleting,
+                    onClick = { showPresets = true }) { Text("Presets") }
                 TextButton(enabled = history.canUndo && draft == null, onClick = { history = history.undo() }) {
                     Text("Undo")
                 }
