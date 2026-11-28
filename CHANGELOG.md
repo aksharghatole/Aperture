@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added deterministic, resolution-relative film grain with intensity and size controls; saved edits remain compatible with earlier history formats.
+
 - Retained reference overlays through rotation and Library navigation, with manual drag, pinch, sliders, and alignment reset.
 - Scaled export workspace estimates for small images so they can export with less available heap.
 

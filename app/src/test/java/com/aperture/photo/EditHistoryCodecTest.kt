@@ -36,6 +36,22 @@ class EditHistoryCodecTest {
             EditHistoryCodec.decode(versionTwo)?.current)
     }
 
+    @Test fun opensVersionFourCurvesWithNeutralGrain() {
+        val versionFour = EditHistoryCodec.encode(EditHistory(Recipe(curves = RgbCurves(red = ToneCurve(8, 120, 230)))))
+            .replaceFirst("5,0", "4,0").lineSequence().mapIndexed { index, line ->
+                if (index == 0) line else line.substringBeforeLast(',').substringBeforeLast(',')
+            }.joinToString("\n")
+        val recipe = EditHistoryCodec.decode(versionFour)!!.current
+        assertEquals(RgbCurves(red = ToneCurve(8, 120, 230)), recipe.curves)
+        assertEquals(0f, recipe.grainIntensity)
+        assertEquals(0f, recipe.grainSize)
+    }
+
+    @Test fun roundTripsGrainInSavedHistory() {
+        val history = EditHistory(Recipe()).commit(Recipe(grainIntensity = .65f, grainSize = .8f))
+        assertEquals(history, EditHistoryCodec.decode(EditHistoryCodec.encode(history)))
+    }
+
     @Test fun loadsVersionThreeWithNeutralCurves() {
         val saved = "3,0\nCLEAN,0.0,0.0,0.0,0.0,0.0,0,0.0,0.0,1.0,1.0,0.25,-0.5"
         assertEquals(Recipe(shadows = .25f, highlights = -.5f), EditHistoryCodec.decode(saved)?.current)
@@ -50,10 +66,11 @@ class EditHistoryCodecTest {
 
     @Test fun rejectsInvalidAndUnknownEditFiles() {
         val valid = EditHistoryCodec.encode(EditHistory(Recipe()))
-        assertNull(EditHistoryCodec.decode(valid.replaceFirst("4,0", "5,0")))
-        assertNull(EditHistoryCodec.decode(valid.replaceFirst("4,0", "4,3")))
+        assertNull(EditHistoryCodec.decode(valid.replaceFirst("5,0", "6,0")))
+        assertNull(EditHistoryCodec.decode(valid.replaceFirst("5,0", "5,3")))
         assertNull(EditHistoryCodec.decode(valid.replaceFirst("0.0", "NaN")))
         assertNull(EditHistoryCodec.decode(valid.replace("CLEAN", "UNKNOWN")))
+        assertNull(EditHistoryCodec.decode(valid.replaceAfterLast(",", "1.1")))
         assertNull(EditHistoryCodec.decode(valid.substringBeforeLast(',')))
         assertNull(EditHistoryCodec.decode("x".repeat(EditHistoryCodec.MaxEncodedSize + 1)))
     }
