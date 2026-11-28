@@ -29,7 +29,7 @@ In Darkroom, toggle **Before** to compare the current edits with the original to
 
 Pinch, double-tap, or use the zoom buttons to inspect a photo in Darkroom. Drag to pan while zoomed. **Fit** restores the full edited frame. Before and After share the same inspection position. Changing the crop or rotation returns to Fit. Inspection magnifies the preview, which is decoded at up to 1,400 pixels on its longest edge. Export uses the original photo.
 
-Portrait mode uses Android’s offline frontal face detector. It shows an eye-position cue after two nearby detections of a single confident face. Groups, profiles, small faces, and devices without working detection can use the upper guide manually.
+Portrait mode uses Android’s offline frontal face detector. A single face shows an eye marker after two consistent readings. Groups of two to four confidently detected faces show an approximate framing box after three consistent readings. Profiles, small faces, overlaps, partial faces, and groups at the frame edge can be missed or withheld. Use the upper guide and check that everyone is visible.
 
 The camera assistant uses frame luminance, a heuristic for concentrated image detail, and available gravity or accelerometer readings. Directional cues describe where to aim the camera within the frame. Performance and capture resolution depend on the device. If camera analysis stalls or returns an invalid frame, Aperture drops its scene cues and keeps manual guides available.
 
@@ -38,6 +38,8 @@ The camera assistant uses frame luminance, a heuristic for concentrated image de
 Aperture uses Android’s image decoder for still photos, including JPEG, PNG, and WebP. It rejects animations the decoder recognizes, such as animated GIF and WebP. Extract a still frame before importing one. Imports preserve the source file bytes. JPEG exports use a white background in transparent areas, including batch exports.
 
 ## Device verification
+
+For group portraits, frame two to four people in Portrait mode with the rear and front cameras. Check that the box follows the visible group in portrait and landscape, and that the direction agrees with the mirrored preview. Have someone turn away, move into the frame edge, or step out. Check that the box disappears until the detector has enough consistent readings. Verify the single face marker with one person.
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.
 

@@ -30,6 +30,8 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 
 ## 0.3 · Portrait face framing
 
+- Guide groups of two to four confidently detected frontal faces after three consistent readings.
+
 - Guide one confidently detected frontal face toward the upper portrait guide using the device’s offline face detector.
 
 ## Camera assistant
