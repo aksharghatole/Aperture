@@ -115,6 +115,9 @@ internal fun CameraScreen(
         mutableIntStateOf(cameraPreferences.getInt("shutter_timer_seconds", 0).takeIf { it == 3 || it == 10 } ?: 0)
     }
     var timerHaptics by remember { mutableStateOf(cameraPreferences.getBoolean("timer_haptics_enabled", false)) }
+    var voiceCues by remember { mutableStateOf(cameraPreferences.getBoolean("composition_voice", false)) }
+    var hapticCues by remember { mutableStateOf(cameraPreferences.getBoolean("composition_haptics", false)) }
+    var cueSettingsOpen by remember { mutableStateOf(false) }
     var mode by rememberSaveable { mutableStateOf(ShootingMode.STREET) }
     var anchor by rememberSaveable { mutableStateOf(CompositionAnchor.AUTO) }
     var markingSubject by remember { mutableStateOf(false) }
@@ -143,6 +146,18 @@ internal fun CameraScreen(
         mutableStateOf(cameraPreferences.getBoolean("exposure_diagnostics_enabled", false))
     }
     val roll = if (granted) deviceRoll() else null
+    val advice = Composition.advice(scene, roll, mode, analysisAvailable, anchor, manualSubject != null)
+    val cueAvailability = CameraCueFeedback(
+        voiceOn = voiceCues,
+        hapticsOn = hapticCues,
+        allowed = granted && ready && analysisAvailable && !busy && pendingShutter == null &&
+            captureMessage == null && !markingSubject && manualSubject == null && !aligningReference &&
+            !referenceDialogOpen && !cueSettingsOpen,
+        mode = mode,
+        anchor = anchor,
+        reading = reading,
+        cue = advice.cue
+    )
 
     fun requestShutter() {
         if (pendingShutter != null) {
@@ -336,8 +351,7 @@ internal fun CameraScreen(
                     } else Column(Modifier.align(Alignment.BottomCenter).padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally) {
                         val hint = if (markingSubject) "Tap the subject to mark it · Back to cancel"
-                        else captureMessage ?: Composition.guidance(scene, roll, mode,
-                            analysisAvailable = analysisAvailable, anchor = anchor, manualSubject = manualSubject != null)
+                        else captureMessage ?: advice.text
                         Text(hint, color = Color.White, fontSize = 13.sp,
                             modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .75f))
                                 .padding(horizontal = 14.dp, vertical = 8.dp))
@@ -435,6 +449,10 @@ internal fun CameraScreen(
                         markingSubject = false
                         manualSubject = null
                     })
+                TextButton(enabled = !busy && pendingShutter == null, onClick = { cueSettingsOpen = true },
+                    modifier = Modifier.semantics { contentDescription = "Composition cues settings" }) {
+                    Text("Cues")
+                }
                 Text("Guide", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                 CompositionGuide.entries.forEach { item ->
                     FilterChip(selected = guide == item, onClick = {
@@ -579,6 +597,21 @@ internal fun CameraScreen(
             aligningReference = true
         }
     }
+
+    if (granted && cueSettingsOpen) CameraCueSettings(
+        voiceOn = voiceCues,
+        setVoice = {
+            voiceCues = it
+            cameraPreferences.edit().putBoolean("composition_voice", it).apply()
+        },
+        hapticsOn = hapticCues,
+        setHaptics = {
+            hapticCues = it
+            cameraPreferences.edit().putBoolean("composition_haptics", it).apply()
+        },
+        availability = cueAvailability,
+        dismiss = { cueSettingsOpen = false }
+    )
 
     LaunchedEffect(captureMessage) {
         if (!busy && captureMessage != null) {

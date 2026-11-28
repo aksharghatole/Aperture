@@ -12,6 +12,7 @@
 
 - Added camera exposure compensation in EV steps when supported by the active lens, with reset and failure feedback.
 - Added an opt-in live camera luma histogram and sampled-preview shadow/highlight estimates, capability-gated on frame analysis.
+- Added optional spoken and haptic composition cues that use fresh, consistent preview evidence.
 - Added capability-gated tap autofocus with a positioned progress/result reticle and stale request cancellation.
 - Added an optional cancellable 3- or 10-second shutter countdown with snapshotted film/camera settings and haptic ticks.
 - Added capability-gated still flash Off/Auto/On and torch modes; torch is disabled on camera rebind and shutdown.
