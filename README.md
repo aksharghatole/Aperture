@@ -2,7 +2,7 @@
 
 Aperture is an offline photography app for Android. Use its camera guides and film looks while shooting, then make edits in the on-device darkroom.
 
-- Frame a shot with composition and level guides.
+- Frame a shot with composition and level guides, guided exposure and a shooting coach for seven photography modes.
 - Browse your photos and adjust color, crop, curves, and more.
 - Keep the original and export an edited JPEG when you’re ready.
 
