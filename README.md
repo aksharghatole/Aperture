@@ -37,6 +37,8 @@ The camera assistant uses frame luminance, a heuristic for concentrated image de
 
 ## Imported images and JPEG transparency
 
+Use **Import** in Library to pick up to 50 images at a time. A single successful import opens in Darkroom. For a batch, Library shows the result for each processed file. **Stop** finishes the current file and skips the rest. Imports copy up to 256 MiB per file and keep a free storage reserve.
+
 Aperture uses Android’s image decoder for still photos, including JPEG, PNG, and WebP. It rejects animations the decoder recognizes, such as animated GIF and WebP. Extract a still frame before importing one. Imports preserve the source file bytes. JPEG exports use a white background in transparent areas, including batch exports.
 
 ## Device verification

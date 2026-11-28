@@ -57,6 +57,7 @@ Camera exposure diagnostics use a fixed 32-bin histogram over the existing 40×4
 - Master RGB and per-channel curves with black, midtone, and white points.
 - Aspect-ratio crop presets with drag positioning and non-destructive export.
 - Batch export for selected photos using each saved Darkroom edit.
+- Import multiple photos with progress, per-file results, and storage limits.
 
 - Add perspective, HSL, and color grading.
 - Add local adjustment masks, sharpening, and noise reduction. Explore Camera2 RAW capability and DNG decode and export on supported hardware.
