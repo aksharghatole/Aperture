@@ -166,10 +166,12 @@ internal fun CameraScreen(
 
     fun applyExposureAdvice(target: Int) {
         val active = session ?: return
-        if (!assistAllowed || !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
-            SceneReading.accept(reading, SystemClock.elapsedRealtime()) == null) return
+        if (!assistAllowed || !owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        val fresh = SceneReading.accept(reading, SystemClock.elapsedRealtime()) ?: return
         val current = exposure ?: return
-        if (suggestedIndex != target || target == current.index) return
+        val stable = stability.update(fresh, SystemClock.elapsedRealtime(), mode) ?: return
+        if (stable != suggestion || SmartExposure.target(stable, current) != target ||
+            target == current.index) return
         autoArmed = false
         assistUpdating = true
         exposureError = false
@@ -209,6 +211,7 @@ internal fun CameraScreen(
     }
     LaunchedEffect(session, ready) {
         if (!ready) {
+            if (assistUpdating) exposureRequestId++
             assistUpdating = false
             autoArmed = false
             assistMessage = null
@@ -486,6 +489,8 @@ internal fun CameraScreen(
                     FilterChip(selected = assistMode == choice,
                         enabled = ready && !busy && pendingShutter == null && !assistUpdating,
                         onClick = {
+                            stability.clear()
+                            suggestion = null
                             assistMode = choice
                             autoArmed = choice == ExposureAssistMode.AUTO
                             assistMessage = null
@@ -510,6 +515,8 @@ internal fun CameraScreen(
                         else "Auto is idle. Recheck when the scene changes.",
                         style = MaterialTheme.typography.bodySmall)
                     TextButton(enabled = assistAllowed && !autoArmed, onClick = {
+                        stability.clear()
+                        suggestion = null
                         autoArmed = true
                         assistMessage = null
                     }) { Text("Recheck light") }
