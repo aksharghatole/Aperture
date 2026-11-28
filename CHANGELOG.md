@@ -23,6 +23,7 @@
 - Added import-date and EXIF capture-date sorting options to the library.
 - Added durable local favorites with an All/Favorites library filter and Darkroom toggle.
 - Added multi-photo imports with progress, a stop control, per-file outcomes, and limits for low storage and oversized inputs.
+- Cached recent library thumbnails, moved photo listing off the UI thread, and preserved scroll position across navigation.
 - Added persistent camera guide choices for automatic, thirds, center, diagonal, golden-ratio, and off overlays.
 - Added explicit composition targets and a manual subject marker separate from tap focus.
 - Added a Darkroom photo information panel with original pixel dimensions, format, file size and date, and available EXIF capture details.
