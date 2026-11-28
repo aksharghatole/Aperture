@@ -493,8 +493,9 @@ internal fun EditorScreen(photo: Photo, operations: PhotoOperations, back: () ->
     if (cropping) {
         val fullRecipe = recipe.copy(crop = CropWindow.Full)
         val fullPreview by renderedPhoto(source, fullRecipe)
-        val originalSize by produceState<Result<ImageSize>?>(null, photo, recipe.quarterTurns) {
-            value = withContext(Dispatchers.IO) {
+        var originalSize by remember(photo, recipe.quarterTurns) { mutableStateOf<Result<ImageSize>?>(null) }
+        LaunchedEffect(photo, recipe.quarterTurns) {
+            originalSize = withContext(Dispatchers.IO) {
                 try {
                     Result.success(library.exportDimensions(photo, fullRecipe))
                 } catch (cancelled: CancellationException) {
