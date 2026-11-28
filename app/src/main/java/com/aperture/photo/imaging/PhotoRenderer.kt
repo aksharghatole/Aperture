@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import android.graphics.ColorSpace
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.Paint
@@ -81,6 +82,8 @@ object PhotoRenderer {
     ): Bitmap = ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
         checkHeader(info)
         decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        // Normalize embedded profiles to the editor and JPEG working space.
+        decoder.setTargetColorSpace(ColorSpace.get(ColorSpace.Named.SRGB))
         if (maxEdge != null) {
             val longest = maxOf(info.size.width, info.size.height)
             decoder.setTargetSampleSize(ExportMemory.sampleSize(longest, maxEdge))

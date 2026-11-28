@@ -39,6 +39,10 @@ The camera assistant uses frame luminance, a heuristic for concentrated image de
 
 Aperture uses Android’s image decoder for still photos, including JPEG, PNG, and WebP. It rejects animations the decoder recognizes, such as animated GIF and WebP. Extract a still frame before importing one. Imports preserve the source file bytes. JPEG exports use a white background in transparent areas, including batch exports.
 
+## JPEG export policy
+
+Exports are new sRGB JPEGs. Aperture converts embedded source profiles to sRGB before applying edits, then writes the crop and rotation into the pixels. Source EXIF orientation is applied when decoding. The exported JPEG carries no copied capture date, camera settings, camera identifiers, GPS coordinates, orientation, or source dimensions. Aperture keeps the original bytes and metadata in its local library.
+
 ## Device verification
 
 For a device smoke test, grant and deny camera permission, verify every film look and a capture in the preview, inspect it in Library, change the edit settings, and confirm the exported JPEG in system photos. Test switching lenses where supported and confirm that flat or low-detail scenes suppress unsupported guidance.

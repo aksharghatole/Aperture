@@ -24,6 +24,7 @@
 - Added a Darkroom photo information panel with original pixel dimensions, format, file size and date, and available EXIF capture details.
 - Added an opt-in volume-key shutter shortcut, disabled by default and active only while the camera can capture.
 - Reject recognized animations on import and fill transparent pixels with white for JPEG export.
+- Normalize embedded color profiles to sRGB and document orientation and source metadata handling for JPEG exports.
 - Retain capture outcomes, single exports, and batch progress across Activity recreation.
 - Check export memory before decoding and offer an explicit smaller JPEG when needed.
 - Recover stale Aperture temporary files, orphan edit files, and verified unfinished exports.
